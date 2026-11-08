@@ -13,6 +13,6 @@ Türkçe konuşanlar için yazıyla çalışan, kişisel bir İngilizce ders uyg
 
 Learnb yalnızca yukarıdaki bağlantıdan kullanılır; indirme ya da kurulum gerekmez. İndirilen kopyalar çalışmaz.
 
-İlk açılışta uygulama, Google'dan ücretsiz bir anahtar almayı adım adım gösterir. Anahtar ve ilerleme sadece kullandığın cihazdaki tarayıcıda saklanır ve kendiliğinden yedeklenir; bu depoda hiçbir anahtar ya da kişisel veri yoktur.
+Hiçbir şey kurman gerekmez: Mia, Learnb'nin ortak bağlantısıyla hemen çalışır. Ortak bağlantı çok yoğunsa Ayarlar'dan kendi ücretsiz Google anahtarını ekleyebilirsin. İlerlemen ve (eklersen) anahtarın sadece kullandığın cihazdaki tarayıcıda saklanır ve kendiliğinden yedeklenir; bu depoda hiçbir anahtar ya da kişisel veri yoktur. Ortak bağlantının sunucusu `relay/` klasöründedir.
 
 Telefonda: bağlantıyı aç ve ana ekrana ekle (iPhone'da Safari'de Paylaş → "Ana Ekrana Ekle", Android'de Chrome'da ⋮ → "Ana ekrana ekle"). Uygulama bunu ayrıca animasyonla da gösterir.

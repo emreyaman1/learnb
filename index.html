@@ -143,6 +143,11 @@ mark { background: var(--mark-bg); color: var(--mark-fg); padding: 0 .2em; borde
 .key-form .hint:empty { min-height: 0; }
 .key-more summary { cursor: pointer; color: var(--blue); font-size: 14.5px; margin: 6px 0; }
 .key-more[open] summary { margin-bottom: 10px; }
+.key-help { font-size: 14px; color: var(--ink-2); }
+.key-help summary { cursor: pointer; color: var(--blue); margin: 2px 0; }
+.key-help p, .key-help ol { margin: 6px 0; }
+.key-help ol { padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+.key-help a { color: var(--blue); }
 .switch { display: flex; gap: 12px; align-items: flex-start; cursor: pointer; }
 .switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
 .switch .sw { flex: none; position: relative; width: 44px; height: 26px; margin-top: 1px; border-radius: 999px; background: var(--rule); transition: background .15s; }

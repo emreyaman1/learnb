@@ -119,6 +119,11 @@
   }
 
   function errText(code) {
+    // Ortak bağlantıdaki sorunlar kullanıcının anahtarıyla ilgili değil; çıkış yolu kendi anahtarını eklemek
+    if (viaRelay()) {
+      if (code === 'rate_limited') return 'Learnb\'nin ortak bağlantısı şu an çok yoğun ya da bugünkü sınırı doldu. Bir dakika sonra tekrar dene. Beklemek istemezsen Ayarlar\'dan kendi ücretsiz Google anahtarını ekleyebilirsin.';
+      if (['bad_key', 'no_free_tier', 'no_model'].includes(code)) return 'Learnb\'nin ortak bağlantısı şu an çalışmıyor. Biraz sonra tekrar dene ya da Ayarlar\'dan kendi Google anahtarını ekleyerek devam et.';
+    }
     switch (code) {
       case 'not_granted': return 'Mia\'nın çalışması için bu sayfanın Claude hesabını kullanmasına izin vermelisin. Ayarlar\'daki "İzinleri yönet" düğmesinden açabilirsin.';
       case 'sampling_disabled': case 'capability_disabled': case 'capability_removed': case 'not_declared': return 'Bu hesapta ya da bu görünümde Mia\'yı çalıştıramıyorum.';
@@ -127,11 +132,14 @@
         : 'Şu an çok fazla istek gitti ya da Claude kullanım limitin doldu. Biraz bekleyip tekrar dene.';
       case 'session_expired': return 'Oturumun kapanmış. claude.ai\'ye yeniden giriş yapıp sayfayı yenile.';
       case 'no_key': return 'Mia\'nın çalışması için önce Google anahtarını girmen gerekiyor. Ana sayfadaki kurulum kartından ya da Ayarlar\'dan bir dakikada yapabilirsin.';
-      case 'bad_key': return 'Google bu kodu kabul etmedi. Kodu eksiksiz kopyaladığından emin ol: "AIza" ile başlayan, 39 harflik bir kod olmalı.';
+      case 'bad_key': return 'Google bu kodu kabul etmedi. Kodu eksiksiz kopyaladığından emin ol: "AQ." ya da "AIza" ile başlayan uzun bir kod olmalı.';
+      case 'no_free_tier': return 'Google bu anahtarın projesinde ücretsiz kullanımı kapatmış. Bu senin hatan değil: Google son zamanlarda bazı yeni hesap ve projelerde ücretsiz kullanıma izin vermiyor. Başka bir Google hesabıyla yeni bir anahtar almayı deneyebilirsin.';
       case 'no_model': return 'Bu anahtarla Mia\'nın kullanabileceği bir Google modeli bulamadım. Biraz sonra tekrar dener misin?';
       case 'bad_request': return 'Google bu isteği kabul etmedi. Biraz sonra tekrar dener misin?';
       case 'upstream_error': return 'Google\'ın sunucusu şu an çok yoğun; birkaç denemede de cevap alamadım. Biraz sonra tekrar dener misin?';
-      case 'timeout': return 'Cevap çok gecikti. İnternet bağlantını kontrol edip tekrar dener misin?';
+      case 'timeout': return AI.provider() === 'gemini'
+        ? 'Google bu sefer çok geç cevap verdi; sunucuları şu an yoğun olabilir. Birkaç saniye sonra tekrar dener misin?'
+        : 'Cevap çok gecikti. Birkaç saniye sonra tekrar dener misin?';
       case 'empty_completion': case 'invalid_json': return 'Mia\'nın cevabı yarım geldi. Tekrar dener misin?';
       case 'network': return 'İnternete bağlanamadım. Bağlantını kontrol edip tekrar dene.';
       case 'refused': return 'Bu isteğe cevap veremedim. Farklı bir şekilde dener misin?';
@@ -179,7 +187,15 @@
   // ---------- Yapay zekâ: claude.ai içinde Claude, masaüstünde Google Gemini ----------
   // Modeli kullanıcı değil Learnb seçer: sohbet, cevap kontrolü ve kelime anlamı gibi hızlı işler en yeni
   // "flash-lite" modelle, ders yazmak en yeni "flash" modelle yapılır; ikisi de az düşünecek şekilde ayarlanır.
-  const G = { key: '', fast: '', smart: '', models: [], base: 'https://generativelanguage.googleapis.com/v1beta/' };
+  // Kendi anahtarı olmayan herkes Mia'yı Learnb'nin aracı sunucusu üzerinden kullanır (relay/ klasörü).
+  // Sunucu, sahibinin Google anahtarını kendisinde saklar; anahtar bu sayfaya hiç gelmez.
+  // Kullanıcı kendi anahtarını girerse istekler doğrudan Google'a gider.
+  const RELAY = 'https://learnb-relay.yemreyaman1.workers.dev/v1beta/';
+  const GOOGLE = 'https://generativelanguage.googleapis.com/v1beta/';
+  const G = { key: '', fast: '', smart: '', models: [] };
+  const viaRelay = () => !G.key && !!RELAY;
+  const gBase = () => (G.key ? GOOGLE : RELAY);
+  const gHead = (h = {}) => (G.key ? { ...h, 'x-goog-api-key': G.key } : h);
   function loadKeys() {
     G.key = lsGet('learnb.gkey') || '';
     G.fast = lsGet('learnb.gfast') || '';
@@ -191,13 +207,16 @@
   }
   loadKeys();
   const jsonCache = new Map();
-  const KEY_RE = /^AIza[0-9A-Za-z_-]{35}$/;
+  // Google yeni anahtarları "AQ." ile başlayan biçimde veriyor; eski "AIza" anahtarlar da hâlâ kabul edilir
+  const KEY_RE = /^(AIza[\w-]{35}|AQ\.[\w.-]{30,})$/;
   const cleanKey = k => String(k || '').replace(/\s+/g, '').replace(/^["'`]+|["'`]+$/g, '');
   // Hata nesnesini tek biçime çevirir; süre dolduysa "timeout" olur
   const asErr = (e, late) => (late ? { code: 'timeout' } : e && typeof e.code === 'string' ? e : { code: e && e.name === 'AbortError' ? 'cancelled' : 'network' });
 
   function httpCode(status, msg) {
     if (status === 400) return /api key/i.test(msg) ? 'bad_key' : 'bad_request';
+    // Google bazı yeni hesap ve projelerde ücretsiz kullanımı kapatıyor; anahtar doğru ama hiçbir model çalışmıyor
+    if (status === 403 && /free tier/i.test(msg)) return 'no_free_tier';
     if (status === 401 || status === 403) return 'bad_key';
     if (status === 404) return 'no_model';
     if (status === 429) return 'rate_limited';
@@ -228,24 +247,65 @@
     const lite = /flash-lite/.test(n);
     if (!lite && !/flash/.test(n)) return -1;
     let s = parseFloat((n.match(/^gemini-(\d+(?:\.\d+)?)/) || [])[1] || '0') * 100;
-    if ((kind === 'fast') === lite) s += 30;
+    // Hızlı işler her zaman bir "lite", ders yazımı her zaman tam "flash" model seçer; sürüm farkı bunu değiştirmez
+    if ((kind === 'fast') === lite) s += 1000;
     if (/preview|exp/.test(n)) s -= 40;
     if (/latest|-\d{3}$/.test(n)) s -= 5;
     return s;
   }
-  const ranked = kind => G.models.map(n => [n, modelScore(n, kind)]).filter(x => x[1] > 0).sort((a, b) => b[1] - a[1]).map(x => x[0]);
+  // Google listede gösterdiği bazı yeni modelleri çalıştıramıyor (istek dakikalarca cevapsız kalıyor). Böyle bir model
+  // 3 gün boyunca seçilmez. Hepsi işaretlenmişse (ör. internet kesikken) işaretler yok sayılır.
+  const SLOW = 'learnb.gslow';
+  const slowMap = () => { try { return JSON.parse(lsGet(SLOW) || '{}') || {}; } catch (e) { return {}; } };
+  const isSlow = (m, map = slowMap()) => (map[m] || '') > today();
+  function markSlow(m) {
+    const map = slowMap();
+    map[m] = addDays(today(), 3);
+    lsSet(SLOW, JSON.stringify(map));
+    if (m === G.fast || m === G.smart) chooseModels();
+  }
+  const ranked = kind => {
+    const all = G.models.map(n => [n, modelScore(n, kind)]).filter(x => x[1] > 0).sort((a, b) => b[1] - a[1]).map(x => x[0]);
+    const map = slowMap(), ok = all.filter(m => !isSlow(m, map));
+    return ok.length ? ok : all;
+  };
   function chooseModels() {
     G.fast = ranked('fast')[0] || '';
     G.smart = ranked('smart')[0] || G.fast;
     lsSet('learnb.gfast', G.fast || null);
     lsSet('learnb.gsmart', G.smart || null);
   }
+  // Adayları küçük bir deneme isteğiyle sınar ve birkaç saniyede cevap veren en yeni modeli seçer
+  async function probe(model, kind) {
+    const think = thinkFor(model, kind);
+    try { await gem(model, gemBody(model, 'Reply with one word: ok', { think }), { ms: 6000 }); return true; }
+    catch (e) {
+      if (e.code === 'bad_request' && think) { thinkFailed(model, think); return probe(model, kind); }
+      if (e.code === 'timeout') markSlow(model);
+      if (e.code === 'no_model') { G.models = G.models.filter(m => m !== model); lsSet('learnb.gmodels', JSON.stringify(G.models)); }
+      return false;
+    }
+  }
+  async function pickModels() {
+    chooseModels();
+    const pick = async kind => {
+      const list = ranked(kind).slice(0, 3), tests = list.map(m => probe(m, kind));
+      for (let i = 0; i < list.length; i++) if (await tests[i]) return list[i];
+      return '';
+    };
+    const [f, s] = await Promise.all([pick('fast'), pick('smart')]);
+    G.fast = f || ranked('fast')[0] || '';
+    G.smart = s || ranked('smart')[0] || G.fast;
+    lsSet('learnb.gfast', G.fast || null);
+    lsSet('learnb.gsmart', G.smart || null);
+    lsSet('learnb.gpick', '2');
+  }
   async function listModels() {
     const ac = new AbortController();
     let late = false;
     const t = setTimeout(() => { late = true; ac.abort(); }, 15000);
     try {
-      const res = await gFetch(`${G.base}models?pageSize=200`, { headers: { 'x-goog-api-key': G.key }, signal: ac.signal });
+      const res = await gFetch(`${gBase()}models?pageSize=200`, { headers: gHead(), signal: ac.signal });
       const j = await res.json();
       G.models = ((j && j.models) || []).filter(m => (m.supportedGenerationMethods || []).includes('generateContent')).map(m => String(m.name).replace(/^models\//, ''));
       lsSet('learnb.gmodels', JSON.stringify(G.models));
@@ -254,11 +314,12 @@
     } catch (e) { throw asErr(e, late); }
     finally { clearTimeout(t); }
   }
-  // Model listesi birkaç günde bir arka planda yenilenir; Google daha yeni bir model çıkarınca Learnb kendiliğinden ona geçer
+  // Model listesi açılışta, 3 günde bir arka planda yenilenir ve adaylar sınanır; Google daha yeni ve çalışan
+  // bir model çıkarınca Learnb kendiliğinden ona geçer
   function refreshModels() {
-    if (P.sample || !G.key) return;
-    if (G.fast && (lsGet('learnb.gmodelsAt') || '') > addDays(today(), -3)) return;
-    listModels().then(chooseModels).catch(() => {});
+    if (P.sample || !(G.key || RELAY)) return;
+    if (G.fast && lsGet('learnb.gpick') === '2' && (lsGet('learnb.gmodelsAt') || '') > addDays(today(), -3)) return;
+    listModels().then(pickModels).catch(() => {});
   }
 
   // Düşünme ayarı: önce en azı denenir; model tanımazsa bir sonraki, o da olmazsa ayarsız gönderilir
@@ -290,15 +351,18 @@
     if (think) gc.thinkingConfig = think;
     return { contents, generationConfig: gc };
   }
-  // Tek istek. Süre dolarsa istek kesilir; akışta her yeni parça süreyi yeniden başlatır
-  async function gem(model, body, { onText, ms }) {
+  // Tek istek. "ms" ilk parçanın (akış yoksa cevabın tamamının) gelmesi için verilen süredir; akışta her yeni
+  // parça süreyi yeniden başlatır. "stop" isteği dışarıdan keser (örneğin yarışı kaybeden istek).
+  async function gem(model, body, { onText, ms, stop }) {
     const ac = new AbortController();
     let late = false, timer = null;
     const arm = t => { clearTimeout(timer); timer = setTimeout(() => { late = true; ac.abort(); }, t); };
+    const halt = () => ac.abort();
+    if (stop) { if (stop.aborted) throw { code: 'cancelled' }; stop.addEventListener('abort', halt); }
     arm(ms);
     try {
-      const url = `${G.base}models/${encodeURIComponent(model)}:${onText ? 'streamGenerateContent?alt=sse' : 'generateContent'}`;
-      const res = await gFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': G.key }, body: JSON.stringify(body), signal: ac.signal });
+      const url = `${gBase()}models/${encodeURIComponent(model)}:${onText ? 'streamGenerateContent?alt=sse' : 'generateContent'}`;
+      const res = await gFetch(url, { method: 'POST', headers: gHead({ 'Content-Type': 'application/json' }), body: JSON.stringify(body), signal: ac.signal });
       if (!onText) {
         const r = readParts(await res.json());
         if (!r.text.trim()) throw { code: r.finish === 'SAFETY' ? 'refused' : 'empty_completion' };
@@ -325,39 +389,64 @@
       if (!text.trim()) throw { code: finish === 'SAFETY' ? 'refused' : 'empty_completion' };
       return { text, truncated: finish === 'MAX_TOKENS' };
     } catch (e) { throw asErr(e, late); }
-    finally { clearTimeout(timer); }
+    finally { clearTimeout(timer); if (stop) stop.removeEventListener('abort', halt); }
   }
-  // Kısa süreli aksaklıklarda (sunucu yoğun, cevap yarım ya da geç) aynı model bir kez daha denenir;
-  // sınır dolarsa ya da yine olmazsa sıradaki modele geçilir. Kullanıcı yalnızca hepsi başarısız olursa hata görür.
-  const TRANSIENT = ['upstream_error', 'network', 'timeout', 'empty_completion', 'invalid_json'];
-  async function gemCall(input, { kind, onText, json }) {
-    if (!G.key) throw { code: 'no_key' };
-    if (!G.fast) { await listModels(); chooseModels(); if (!G.fast) throw { code: 'no_model' }; }
-    const first = kind === 'smart' ? G.smart || G.fast : G.fast;
-    const order = [first, ...ranked(kind).filter(m => m !== first)].slice(0, 3);
-    const ms = kind === 'smart' ? 60000 : 25000, limit = kind === 'smart' ? 120000 : 45000, t0 = Date.now();
-    const relay = onText && (x => { sent = true; onText(x); });
-    let last = null, sent = false;
-    for (const model of order) {
-      let tries = 0;
-      while (tries < 2) {
-        if (last && Date.now() - t0 > limit) throw last;
-        const think = thinkFor(model, kind);
-        try {
-          const r = await gem(model, gemBody(model, input, { json, think }), { onText: relay, ms });
-          if (json) r.value = parseJsonLoose(r.text);
-          return r;
-        } catch (e) {
-          last = e;
-          if (sent || ['bad_key', 'cancelled', 'refused'].includes(e.code)) throw e;
-          if (e.code === 'bad_request' && think) { thinkFailed(model, think); continue; }
-          if (!TRANSIENT.includes(e.code)) break;
-          if (++tries < 2) await sleep(600 + Math.random() * 700);
-        }
-      }
-      if (last && last.code === 'no_model') { G.models = G.models.filter(m => m !== model); lsSet('learnb.gmodels', JSON.stringify(G.models)); chooseModels(); }
-    }
-    throw last || { code: 'upstream_error' };
+  // Kullanıcı uzun beklemesin diye: asıl model birkaç saniyede yazmaya başlamazsa yedek model aynı anda
+  // devreye girer; hangisi önce yazarsa o kullanılır, öbürü kesilir. Biri hata verirse sıradaki denenir.
+  // Hiçbiri "limit" içinde yazmaya başlamazsa kullanıcı hata görür; toplam bekleme bu sınırı geçmez.
+  //   hedge: yedeğin devreye girdiği an, first: tek bir modelin ilk parça için bekleme sınırı
+  const WAIT = { smart: { hedge: 7000, first: 25000, limit: 35000 }, fast: { hedge: 5000, first: 12000, limit: 20000 } };
+  const RETRY = ['upstream_error', 'network', 'empty_completion'];
+  function gemCall(input, { kind, onText, json }) {
+    if (!G.key && !RELAY) return Promise.reject({ code: 'no_key' });
+    if (!G.fast) return listModels().then(() => { chooseModels(); if (!G.fast) throw { code: 'no_model' }; return gemCall(input, { kind, onText, json }); });
+    const w = WAIT[kind], t0 = Date.now(), left = () => w.limit - (Date.now() - t0);
+    const main = kind === 'smart' ? G.smart || G.fast : G.fast;
+    const queue = [...new Set([main, kind === 'smart' ? G.fast : G.smart, ...ranked(kind)])].filter(Boolean).slice(0, 4);
+    const tries = {}, runs = new Set();
+    let last = null, owner = null, done = false, hedge = null, deadline = null, lead = null;
+    // Yedek, hâlâ sessiz bekleyen asıl modeli geçtiyse asıl model "yavaş" sayılır ve bir süre seçilmez
+    const beaten = win => { if (lead && win !== lead.ac && runs.has(lead.ac)) markSlow(lead.model); };
+    return new Promise((resolve, reject) => {
+      const finish = (err, val) => {
+        if (done) return;
+        done = true;
+        clearTimeout(hedge); clearTimeout(deadline);
+        runs.forEach(ac => { if (ac !== owner) ac.abort(); });
+        if (err) reject(err); else resolve(val);
+      };
+      const launch = () => {
+        if (done) return;
+        const model = queue.shift();
+        if (!model || left() < 1500) { if (!runs.size) finish(last || { code: 'timeout' }); return; }
+        const ac = new AbortController(), think = thinkFor(model, kind);
+        runs.add(ac);
+        if (!lead) lead = { ac, model };
+        tries[model] = (tries[model] || 0) + 1;
+        // İlk parçayı getiren istek dersi yazmaya devam eder; öbürleri o an kesilir
+        const pass = onText && (x => {
+          if (!owner) { owner = ac; beaten(ac); clearTimeout(hedge); clearTimeout(deadline); runs.forEach(o => { if (o !== ac) o.abort(); }); }
+          if (owner === ac && !done) onText(x);
+        });
+        gem(model, gemBody(model, input, { json, think }), { onText: pass, ms: Math.min(w.first, left()), stop: ac.signal })
+          .then(r => { if (json) r.value = parseJsonLoose(r.text); return r; })
+          .then(r => { beaten(ac); runs.delete(ac); finish(null, r); }, e => {
+            runs.delete(ac);
+            if (done) return;
+            if (owner === ac || ['bad_key', 'refused', 'no_free_tier'].includes(e.code)) return finish(e);
+            if (owner || e.code === 'cancelled') return;
+            last = e;
+            if (e.code === 'timeout') markSlow(model);
+            if (e.code === 'bad_request' && think) { thinkFailed(model, think); queue.unshift(model); }
+            else if (RETRY.includes(e.code) && tries[model] < 2) queue.push(model);
+            if (e.code === 'no_model') { G.models = G.models.filter(m => m !== model); lsSet('learnb.gmodels', JSON.stringify(G.models)); chooseModels(); }
+            if (runs.size < 2) setTimeout(launch, e.code === 'bad_request' ? 0 : 300);
+          });
+      };
+      hedge = setTimeout(() => { if (!owner && runs.size < 2) launch(); }, w.hedge);
+      deadline = setTimeout(() => { if (!owner) finish(last && last.code !== 'cancelled' ? last : { code: 'timeout' }); }, w.limit);
+      launch();
+    });
   }
   function parseJsonLoose(text) {
     const t = String(text || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
@@ -375,12 +464,19 @@
       await listModels();
       chooseModels();
       if (!G.fast) throw { code: 'no_model' };
+      // Model listesi her anahtara açık; anahtarın gerçekten çalıştığını küçük bir deneme isteği gösterir.
+      // Sunucu yoğunluğu ya da sınır gibi anahtarla ilgisi olmayan hatalarda anahtar yine kaydedilir.
+      try { await gemCall('Reply with one word: ok', { kind: 'fast' }); }
+      catch (e) { if (['bad_key', 'no_free_tier', 'no_model'].includes(e.code)) throw e; }
       lsSet('learnb.gkey', key);
+      // Yeni anahtarın projesinde hangi modellerin çalıştığı arka planda yeniden sınanır
+      lsSet(SLOW, null);
+      pickModels().catch(() => {});
       return G.fast;
     } catch (e) { Object.assign(G, old); throw e; }
   }
   const AI = {
-    ready: () => !!(P.sample || G.key),
+    ready: () => !!(P.sample || G.key || RELAY),
     provider: () => (P.sample ? 'claude' : 'gemini'),
     async text(input, { tier = 'default', onText, fresh } = {}) {
       if (P.sample) { const o = { modelTier: tier }; if (onText) o.onText = onText; if (fresh) o.cache = false; return P.sample(input, o); }
@@ -852,13 +948,6 @@ Rules:
     m.innerHTML = '<div class="wrap thread-wrap"><div class="thread"></div></div>';
     THREAD = $('.thread', m);
     setDock('<p class="dock-note">Ders açılıyor…</p>');
-    if (!opts.fresh && prefetching[id]) {
-      miaSay('<p>Bu dersi senin için zaten hazırlıyordum, birazdan hazır.</p>', 'note');
-      showTyping();
-      await prefetching[id];
-      if (L !== R) return;
-      hideTyping();
-    }
     let doc = opts.fresh ? null : S.docs[id] || await Store.load('lesson-' + id);
     if (L !== R) return;
     if (!doc && !opts.fresh && id === D.starter.id) doc = { lines: [...D.starter.steps, D.starter.vocab, D.starter.summary] };
@@ -866,7 +955,7 @@ Rules:
       S.docs[id] = doc;
       doc.lines.forEach(o => ingest(R, o));
       begin(R, true);
-    } else generateLesson(R, opts.fresh);
+    } else generateLesson(R, opts.fresh, !opts.fresh && prefetching[id]);
   }
   function progress() {
     const bar = $('#top .progress i');
@@ -1164,10 +1253,10 @@ Answer in simple, friendly Turkish in at most 120 words. Give a short English ex
     });
   }
 
-  async function generateLesson(R, fresh) {
+  async function generateLesson(R, fresh, job) {
     const l = R.lesson;
     if (!AI.ready()) return lessonError(R, 'no_key');
-    miaSay(`<p>Bu dersi senin için hazırlıyorum. Birkaç saniye ile bir dakika arası sürebilir; yazdıkça göstereceğim, sen okumaya başlarsın.</p>${AI.provider() === 'claude' && !Object.keys(S.docs).length ? '<p class="hint">İlk seferde Claude hesabını kullanmam için izin isteyen bir pencere çıkabilir.</p>' : ''}`, 'note');
+    miaSay(`<p>Bu dersi senin için hazırlıyorum; birkaç saniye sürer. Yazdıkça göstereceğim, sen okumaya başlarsın.</p>${AI.provider() === 'claude' && !Object.keys(S.docs).length ? '<p class="hint">İlk seferde Claude hesabını kullanmam için izin isteyen bir pencere çıkabilir.</p>' : ''}`, 'note');
     showTyping();
     setDock('<p class="dock-note">Mia dersi hazırlıyor…</p>');
     R.streaming = true;
@@ -1180,7 +1269,7 @@ Answer in simple, friendly Turkish in at most 120 words. Give a short English ex
     };
     try {
       const opts = { tier: 'default', fresh, onText: ({ delta }) => { const parts = (buf + delta).split('\n'); buf = parts.pop(); parts.forEach(eat); } };
-      const res = await AI.text(lessonPrompt(l), opts);
+      const res = await (job ? follow(job, l, opts) : AI.text(lessonPrompt(l), opts));
       eat(buf); buf = '';
       R.streaming = false;
       if (!res.truncated && lessonSteps(R) >= 6) saveDoc(l.id, R.raw);
@@ -1209,26 +1298,39 @@ Answer in simple, friendly Turkish in at most 120 words. Give a short English ex
     hideTyping();
     miaSay(`<p>${esc(errText(code))}</p>`, 'note');
     const perm = code === 'not_granted' && P.perms;
-    setDock(`<div class="dock-row"><button class="btn ghost" type="button" data-act="home">Derslere dön</button>${perm ? '<button class="btn ghost" type="button" data-x="perms">İzinleri yönet</button>' : ''}${code === 'no_key' || code === 'bad_key' ? '<button class="btn primary grow" type="button" data-act="settings">Ayarları aç</button>' : '<button class="btn primary grow" type="button" data-x="again">Tekrar dene</button>'}</div>`, d => {
+    setDock(`<div class="dock-row"><button class="btn ghost" type="button" data-act="home">Derslere dön</button>${perm ? '<button class="btn ghost" type="button" data-x="perms">İzinleri yönet</button>' : ''}${['no_key', 'bad_key', 'no_free_tier'].includes(code) ? '<button class="btn primary grow" type="button" data-act="settings">Ayarları aç</button>' : '<button class="btn primary grow" type="button" data-x="again">Tekrar dene</button>'}</div>`, d => {
       const a = $('[data-x=again]', d); if (a) a.onclick = () => openLesson(R.lesson.id);
       const p = $('[data-x=perms]', d); if (p) p.onclick = managePerms;
     });
   }
   const prefetching = {};
-  // Ders bitince sıradakini arka planda hazırlar; o ders açılırsa bu hazırlık beklenir, ikinci istek gitmez.
+  // Ders bitince sıradakini arka planda yazmaya başlar. O ders açılırsa ikinci istek gitmez ve beklenmez:
+  // o ana kadar yazılanlar hemen gösterilir, gerisi geldikçe eklenir.
   function prefetch(l) {
     if (!AI.ready() || !l || S.docs[l.id] || prefetching[l.id] || l.id === D.starter.id) return;
-    prefetching[l.id] = (async () => {
+    const job = prefetching[l.id] = { text: '', subs: new Set() };
+    job.done = (async () => {
       try {
         const doc = await Store.load('lesson-' + l.id);
-        if (doc && Array.isArray(doc.lines) && doc.lines.length) { S.docs[l.id] = doc; return; }
-        const res = await AI.text(lessonPrompt(l), { tier: 'default' });
+        if (doc && Array.isArray(doc.lines) && doc.lines.length) { S.docs[l.id] = doc; return null; }
+        const res = await AI.text(lessonPrompt(l), { tier: 'default', onText: x => { job.text = x.text; job.subs.forEach(f => f(x)); } });
         const R = newRun(l);
         parseLines(res.text, R);
         if (!res.truncated && lessonSteps(R) >= 6 && !S.docs[l.id]) saveDoc(l.id, R.raw);
-      } catch (e) { /* önceden hazırlık olmazsa ders açılınca hazırlanır */ }
-      finally { delete prefetching[l.id]; }
+        return res;
+      } finally { delete prefetching[l.id]; }
     })();
+    job.done.catch(() => { /* önceden hazırlık olmazsa ders açılınca hazırlanır */ });
+  }
+  // Arka planda yazılan derse bağlanır. O hazırlık hiçbir şey yazamadan düşerse ders baştan istenir.
+  async function follow(job, l, opts) {
+    const f = x => opts.onText(x);
+    if (job.text) opts.onText({ text: job.text, delta: job.text });
+    job.subs.add(f);
+    try { const res = await job.done; if (res) return res; }
+    catch (e) { if (job.text) throw e; }
+    finally { job.subs.delete(f); }
+    return AI.text(lessonPrompt(l), opts);
   }
 
   function finishLesson() {
@@ -1523,7 +1625,7 @@ Reply with only this JSON: {"base":"the dictionary form of the word","tr":"its T
     $('[data-x=placement]', el).onclick = () => { closeSheet(); L = null; renderPlacement(); };
     const pb = $('[data-x=perms]', el); if (pb) pb.onclick = managePerms;
     const del = $('[data-x=gk-del]', el);
-    if (del) del.onclick = () => { ['learnb.gkey', 'learnb.gfast', 'learnb.gsmart', 'learnb.gmodels', 'learnb.gmodelsAt'].forEach(k => lsSet(k, null)); loadKeys(); closeSheet(); refreshAfterAi(); };
+    if (del) del.onclick = () => { ['learnb.gkey', 'learnb.gfast', 'learnb.gsmart', 'learnb.gmodels', 'learnb.gmodelsAt', 'learnb.gpick', SLOW].forEach(k => lsSet(k, null)); loadKeys(); closeSheet(); refreshAfterAi(); refreshModels(); };
     $('[data-x=reset]', el).onclick = () => {
       const area = $('#reset-area', el);
       area.innerHTML = '<p class="hint">Bitirdiğin dersler, serin, kelimelerin ve hataların silinir. Hazırlanmış ders içerikleri kalır. Bu geri alınamaz.</p><div class="dock-row"><button class="btn ghost" type="button" data-x="no">Vazgeç</button><button class="btn primary grow" type="button" data-x="yes">Evet, hepsini sil</button></div>';
@@ -1545,21 +1647,36 @@ Reply with only this JSON: {"base":"the dictionary form of the word","tr":"its T
       <input class="field" type="text" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="${esc(ph)}" aria-label="Google anahtarı">
       <div class="dock-row"><button class="btn ghost" type="button" data-x="paste">Yapıştır</button><button class="btn primary grow" type="submit">Kaydet</button></div>
       <p class="hint" data-msg role="status"></p></form>`;
-  function setupBody() {
-    return `<p>Mia'nın seninle çalışabilmesi için Google'dan ücretsiz bir <b>anahtar</b> alman gerekiyor. Anahtar, Mia'yı kendi Google hesabınla çalıştıran uzun bir koddur. Bir kere girmen yeterli.</p>
+  function setupBody(intro = true) {
+    return `${intro ? '<p>Mia\'nın seninle çalışabilmesi için Google\'dan ücretsiz bir <b>anahtar</b> alman gerekiyor. Anahtar, Mia\'yı kendi Google hesabınla çalıştıran uzun bir koddur. Bir kere girmen yeterli.</p>' : ''}
       <div class="kd-slot"></div>
       <p class="setup-step">1. Anahtarını Google'dan al</p>
       <a class="btn primary wide" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google'ın anahtar sayfasını aç</a>
       <p class="hint">Sayfa yeni sekmede açılır. Kodu kopyalayınca bu sekmeye geri dön.</p>
+      <details class="key-help"><summary>Google "Unable to create API key" (anahtar oluşturulamadı) mı diyor?</summary>
+        <p>Bazı Google hesaplarında anahtar sayfası projeyi kendisi açamıyor. Projeyi önce Google Cloud'da aç, sonra anahtarı ona bağla:</p>
+        <ol>
+          <li>Çıkan pencereyi <b>Close</b> ile kapat.</li>
+          <li><a href="https://console.cloud.google.com/projectcreate" target="_blank" rel="noopener">Google Cloud'da yeni proje sayfasını</a> aç ve <b>Create</b> düğmesine bas. İlk seferse ülkeni seçip şartları kabul etmeni ister. Kart bilgisi gerekmez.</li>
+          <li>Anahtar sayfasına dön, <b>Create API key</b> de. Açılan pencerede az önce açtığın projeyi seç; listede yoksa <b>Import project</b> ile ekle. Sonra <b>Create key</b>.</li>
+        </ol>
+      </details>
       <p class="setup-step">2. Kodu buraya yapıştır</p>
-      ${keyForm('AIza ile başlayan kodu yapıştır')}`;
+      ${keyForm('AQ. ile başlayan kodu yapıştır')}`;
   }
   function geminiSection() {
+    if (viaRelay()) return `<section id="ai-sec"><h3>Mia'nın bağlantısı</h3>
+      <p class="status on">Bağlı, Mia hazır</p>
+      <p class="hint">Mia, Learnb'nin ortak bağlantısıyla çalışıyor; senin bir şey kurman gerekmiyor. Yazdıkların Google'ın ücretsiz hizmetine gider ve Google'ın ürünlerini geliştirmek için kullanılabilir; derslere kişisel bilgi yazma.</p>
+      <details class="key-more"><summary>Kendi Google anahtarımı kullanmak istiyorum</summary>
+        <p class="hint">Ortak bağlantı çok yoğunsa ya da bugünkü sınırı dolarsa kendi ücretsiz anahtarınla beklemeden devam edebilirsin.</p>
+        ${setupBody(false)}</details></section>`;
     if (!G.key) return `<section id="ai-sec"><h3>Mia'yı çalıştır</h3>${setupBody()}</section>`;
     return `<section id="ai-sec"><h3>Mia'nın bağlantısı</h3>
-      <p class="status on">Bağlı, Mia hazır</p>
+      <p class="status on">Bağlı, Mia kendi Google anahtarınla çalışıyor</p>
       <details class="key-more"><summary>Anahtarı değiştir</summary>${keyForm('Yeni anahtarı yapıştır')}</details>
       <p class="hint">Anahtar sadece bu cihazdaki tarayıcıda saklanır. Google'ın ücretsiz kullanımında günlük bir sınır vardır ve yazdıkların Google'ın ürünlerini geliştirmek için kullanılabilir; derslere kişisel bilgi yazma.</p>
+      ${RELAY ? '<p class="hint">Anahtarı silersen Mia, Learnb\'nin ortak bağlantısıyla çalışmaya devam eder.</p>' : ''}
       <button class="btn ghost danger" type="button" data-x="gk-del">Anahtarı sil</button></section>`;
   }
   // Kurulum kartını ve ayarlardaki anahtar kutusunu çalıştırır; dönen rehber animasyonunu yerine koyar

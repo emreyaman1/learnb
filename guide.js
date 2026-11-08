@@ -73,13 +73,13 @@
 
     // Sahne 3: Anahtar satırı
     var page3 = '<div class="kd-heading">API Keys</div>' +
-      '<div class="kd-key-row"><span>AIzaSy\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u20227Kq</span>' +
+      '<div class="kd-key-row"><span>AQ.Ab8\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u20227Kq</span>' +
       '<span class="kd-copy-icon">' + COPY_SVG + '<span class="kd-copied">Kopyalandı</span></span></div>';
 
     // Sahne 4: Learnb kartı
     var page4 = '<div class="kd-lb-card">' +
       '<div class="kd-lb-title">Mia\u2019yı çalıştıralım</div>' +
-      '<div class="kd-lb-input"><span class="kd-typing">AIzaSy\u2022\u2022\u2022\u20227Kq</span></div>' +
+      '<div class="kd-lb-input"><span class="kd-typing">AQ.Ab8\u2022\u2022\u2022\u20227Kq</span></div>' +
       '<div class="kd-badge">' + CHECK_SM + ' Mia hazır!</div></div>';
 
     var pages = [page1, page2, page3, page4];
@@ -406,7 +406,7 @@
 
     // İpuçları
     var hints = h('<div class="pt-hints">' +
-      '<p class="hint">Mia telefonda da aynı Google anahtarıyla çalışır: telefonda aistudio.google.com/apikey sayfasını açıp anahtarını kopyala ve Learnb\u2019ye yapıştır.</p>' +
+      '<p class="hint">Telefonda bir şey kurman gerekmez; Mia orada da hemen çalışır. Kendi Google anahtarını kullanıyorsan onu telefondaki Learnb’ye de bir kez yapıştırman yeterli.</p>' +
       '<p class="hint">Not: Derslerin, kelimelerin ve serin her cihazda ayrı saklanır.</p></div>');
     dialog.appendChild(hints);
 

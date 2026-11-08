@@ -1,0 +1,12 @@
+name = "learnb-relay"
+main = "worker.js"
+compatibility_date = "2025-09-01"
+
+# Her IP için dakikada en fazla 40 istek (Cloudflare Rate Limiting bağlaması)
+[[ratelimits]]
+name = "LIMITER"
+namespace_id = "1001"
+
+  [ratelimits.simple]
+  limit = 40
+  period = 60
