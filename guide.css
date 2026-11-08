@@ -1,74 +1,9 @@
-/* guide.css — keyDemo + phoneTip stilleri */
-
-/* ===== keyDemo: Anahtar alma animasyonu ===== */
-.kd { width: 100%; max-width: 420px; margin-inline: auto; font-family: var(--f-body); color: var(--ink); }
-.kd-stage { position: relative; width: 100%; aspect-ratio: 16 / 11; background: var(--paper); border: 1.5px solid var(--rule); border-radius: 10px; overflow: hidden; user-select: none; }
-
-/* Tarayıcı taslağı */
-.kd-bar { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; background: var(--sheet); border-bottom: 1px solid var(--rule); font-size: 11px; color: var(--ink-2); }
-.kd-lock { flex: none; width: 10px; height: 12px; border: 1.5px solid var(--ink-2); border-radius: 2px; position: relative; }
-.kd-lock::before { content: ""; position: absolute; left: 1.5px; top: -5px; width: 5px; height: 5px; border: 1.5px solid var(--ink-2); border-bottom: 0; border-radius: 3px 3px 0 0; }
-.kd-url { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--f-body); }
-.kd-page { position: relative; flex: 1; padding: 10px 14px; overflow: hidden; }
-
-/* Sahne içerikleri */
-.kd-heading { font: 600 12px/1.3 var(--f-display); margin: 0 0 6px; color: var(--ink); }
-.kd-lines { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
-.kd-line { height: 6px; border-radius: 3px; background: var(--rule); }
-.kd-btn-blue { display: inline-flex; align-items: center; justify-content: center; padding: 5px 12px; border-radius: 6px; background: var(--blue); color: var(--on-blue); font-size: 10px; font-weight: 600; white-space: nowrap; }
-
-/* Modal taslağı (sahne 2) */
-.kd-modal { position: absolute; top: 28px; left: 50%; transform: translateX(-50%); width: 72%; background: var(--sheet); border: 1px solid var(--rule); border-radius: 8px; box-shadow: var(--shadow); padding: 8px 10px; opacity: 0; pointer-events: none; }
-.kd[data-s="2"] .kd-modal { opacity: 1; }
-.kd-modal-title { font: 600 11px/1.3 var(--f-display); margin: 0 0 6px; }
-.kd-select-ph { height: 20px; border-radius: 4px; background: var(--rule-faint); border: 1px solid var(--rule); margin-bottom: 8px; }
-
-/* Anahtar satırı (sahne 3) */
-.kd-key-row { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 6px; background: var(--rule-faint); font-size: 10px; font-family: monospace; color: var(--ink); word-break: break-all; }
-.kd-copy-icon { flex: none; width: 16px; height: 16px; color: var(--ink-2); cursor: pointer; position: relative; }
-.kd-copied { position: absolute; top: -18px; left: 50%; transform: translateX(-50%); font-size: 9px; color: var(--ok); font-family: var(--f-body); white-space: nowrap; opacity: 0; }
-.kd[data-s="3"] .kd-copied { animation: kd-copied-show 2.6s ease; }
-
-/* Learnb kart (sahne 4) */
-.kd-lb-card { padding: 8px 10px; border-radius: 8px; border: 1.5px dashed var(--blue); background: var(--sheet); }
-.kd-lb-title { font: 600 11px/1.3 var(--f-display); margin: 0 0 5px; }
-.kd-lb-input { display: flex; align-items: center; height: 22px; border-radius: 5px; border: 1px solid var(--rule); background: var(--paper); padding: 0 6px; font-size: 9px; color: var(--ink-2); overflow: hidden; }
-.kd-lb-input .kd-typing { color: var(--ink); font-family: monospace; font-size: 9px; overflow: hidden; white-space: nowrap; width: 0; }
-.kd[data-s="4"] .kd-lb-input .kd-typing { animation: kd-type 2s steps(18) .3s forwards; }
-.kd-badge { display: inline-flex; align-items: center; gap: 4px; margin-top: 5px; font-size: 9px; font-weight: 600; color: var(--ok); opacity: 0; }
-.kd[data-s="4"] .kd-badge { animation: kd-fade-in .4s 2.4s forwards; }
-
-/* İmleç */
-.kd-cursor { position: absolute; width: 18px; height: 18px; z-index: 5; pointer-events: none; opacity: 0; transition: none; }
-.kd[data-s] .kd-cursor { opacity: 1; }
-.kd-ripple { position: absolute; width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid var(--blue); opacity: 0; pointer-events: none; z-index: 4; }
-
-/* Sahne geçişlerinde imleç ve dalga animasyonları */
-.kd[data-s="1"] .kd-cursor { animation: kd-move1 3.2s ease forwards; }
-.kd[data-s="2"] .kd-cursor { animation: kd-move2 3.2s ease forwards; }
-.kd[data-s="3"] .kd-cursor { animation: kd-move3 3.2s ease forwards; }
-.kd[data-s="4"] .kd-cursor { animation: kd-move4 3.2s ease forwards; }
-.kd[data-s="1"] .kd-ripple { animation: kd-ripple 0.5s 2.4s ease-out; }
-.kd[data-s="2"] .kd-ripple { animation: kd-ripple 0.5s 2.4s ease-out; }
-.kd[data-s="3"] .kd-ripple { animation: kd-ripple 0.5s 2.4s ease-out; }
-
-@keyframes kd-move1 { 0% { left: 20%; top: 40%; } 70% { left: var(--tx1, 35%); top: var(--ty1, 72%); } 78% { transform: scale(.85); } 85% { transform: scale(1); } 100% { left: var(--tx1, 35%); top: var(--ty1, 72%); } }
-@keyframes kd-move2 { 0% { left: 20%; top: 40%; } 70% { left: var(--tx2, 50%); top: var(--ty2, 74%); } 78% { transform: scale(.85); } 85% { transform: scale(1); } 100% { left: var(--tx2, 50%); top: var(--ty2, 74%); } }
-@keyframes kd-move3 { 0% { left: 20%; top: 40%; } 70% { left: var(--tx3, 78%); top: var(--ty3, 50%); } 78% { transform: scale(.85); } 85% { transform: scale(1); } 100% { left: var(--tx3, 78%); top: var(--ty3, 50%); } }
-@keyframes kd-move4 { 0% { left: 20%; top: 40%; } 100% { left: 20%; top: 40%; opacity: 0; } }
-
-@keyframes kd-ripple { 0% { transform: scale(.3); opacity: .7; } 100% { transform: scale(2.2); opacity: 0; } }
-@keyframes kd-copied-show { 0% { opacity: 0; } 15% { opacity: 1; } 85% { opacity: 1; } 100% { opacity: 0; } }
-@keyframes kd-type { from { width: 0; } to { width: 105px; } }
-@keyframes kd-fade-in { to { opacity: 1; } }
-
-/* Alt bilgi */
-.kd-caption { padding: 10px 0 6px; font-size: 14px; color: var(--ink-2); min-height: 42px; line-height: 1.45; }
-.kd-dots { display: flex; justify-content: center; gap: 8px; padding: 4px 0 6px; }
-.kd-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--rule); border: 0; padding: 0; cursor: pointer; transition: background .2s; }
-.kd-dot[aria-current="true"] { background: var(--blue); }
+/* guide.css — phoneTip stilleri */
 
 /* ===== phoneTip: Telefon rehberi ===== */
+/* Telefon çiziminde sayfa içeriğini temsil eden gri çizgiler */
+.kd-lines { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+.kd-line { height: 6px; border-radius: 3px; background: var(--rule); }
 .pt-wrap { position: fixed; inset: 0; z-index: 45; display: flex; align-items: flex-end; justify-content: center; }
 .pt-back { position: absolute; inset: 0; background: var(--scrim); }
 .pt { position: relative; width: 100%; max-width: 560px; max-height: 90vh; overflow-y: auto; background: var(--sheet); border-radius: 18px 18px 0 0; padding: 18px 20px calc(22px + env(safe-area-inset-bottom, 0px)) 20px; display: flex; flex-direction: column; gap: 16px; }
@@ -151,6 +86,5 @@
 
 /* Animasyon devre dışı */
 @media (prefers-reduced-motion: reduce) {
-  .kd-cursor, .kd-ripple, .kd-copied, .kd-typing, .kd-badge,
   .ph-finger, .ph-hs-icon.lb { animation: none !important; }
 }

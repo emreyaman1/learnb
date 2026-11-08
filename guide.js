@@ -1,4 +1,4 @@
-/* guide.js — Learnb kurulum ve telefon rehber animasyonları */
+/* guide.js — Learnb telefon rehberi animasyonu */
 (function () {
   'use strict';
 
@@ -28,140 +28,10 @@
   });
 
   // ---------- SVG'ler ----------
-  var CURSOR_SVG = '<svg class="kd-cursor" viewBox="0 0 24 24" fill="var(--ink)" opacity=".8">' +
-    '<path d="M5 2l12 10h-7l4 9-2.5 1-4-9-2.5 4z"/></svg>';
-
-  var COPY_SVG = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">' +
-    '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg>';
-
-  var CHECK_SM = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="var(--ok)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">' +
-    '<path d="M3 8.5l3.5 3.5L13 5"/></svg>';
-
   var SHARE_SVG = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--blue)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
     '<path d="M4 15v4a1 1 0 001 1h14a1 1 0 001-1v-4M12 3v12M8 7l4-4 4 4"/></svg>';
 
-  // ---------- 1) keyDemo ----------
-  function keyDemo() {
-    var root = h('<div class="kd" data-s="1"></div>');
-
-    var captions = [
-      '1. aistudio.google.com/apikey sayfasını aç, Google hesabınla gir ve \u201cCreate API key\u201d (anahtar oluştur) düğmesine bas.',
-      '2. Açılan küçük pencerede \u201cCreate key\u201d düğmesine bas. Senden bir proje seçmeni isterse listeden herhangi birini seç.',
-      '3. Oluşan uzun kodun yanındaki kopyala simgesine bas.',
-      '4. Learnb\u2019ye dön, kodu kutuya yapıştır. Mia hazır!'
-    ];
-    var urls = [
-      'aistudio.google.com/apikey',
-      'aistudio.google.com/apikey',
-      'aistudio.google.com/apikey',
-      'emreyaman1.github.io/learnb'
-    ];
-
-    // Sahne 1: API keys sayfası
-    var page1 = '<div class="kd-heading">API Keys</div>' +
-      '<div class="kd-lines"><div class="kd-line" style="width:80%"></div>' +
-      '<div class="kd-line" style="width:60%"></div></div>' +
-      '<div class="kd-btn-blue">Create API key</div>';
-
-    // Sahne 2: Modal
-    var page2 = '<div class="kd-heading">API Keys</div>' +
-      '<div class="kd-lines"><div class="kd-line" style="width:80%"></div></div>' +
-      '<div class="kd-modal">' +
-      '<div class="kd-modal-title">Create API key</div>' +
-      '<div class="kd-select-ph"></div>' +
-      '<div class="kd-btn-blue">Create key</div></div>';
-
-    // Sahne 3: Anahtar satırı
-    var page3 = '<div class="kd-heading">API Keys</div>' +
-      '<div class="kd-key-row"><span>AQ.Ab8\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u20227Kq</span>' +
-      '<span class="kd-copy-icon">' + COPY_SVG + '<span class="kd-copied">Kopyalandı</span></span></div>';
-
-    // Sahne 4: Learnb kartı
-    var page4 = '<div class="kd-lb-card">' +
-      '<div class="kd-lb-title">Mia\u2019yı çalıştıralım</div>' +
-      '<div class="kd-lb-input"><span class="kd-typing">AQ.Ab8\u2022\u2022\u2022\u20227Kq</span></div>' +
-      '<div class="kd-badge">' + CHECK_SM + ' Mia hazır!</div></div>';
-
-    var pages = [page1, page2, page3, page4];
-
-    // Sahne yapısı
-    var stage = h('<div class="kd-stage" aria-hidden="true"></div>');
-    var bar = h('<div class="kd-bar"><span class="kd-lock"></span><span class="kd-url">' + esc(urls[0]) + '</span></div>');
-    var page = h('<div class="kd-page">' + pages[0] + '</div>');
-    var cursor = h(CURSOR_SVG);
-    var ripple = h('<div class="kd-ripple"></div>');
-
-    stage.appendChild(bar);
-    stage.appendChild(page);
-    stage.appendChild(cursor);
-    stage.appendChild(ripple);
-    root.appendChild(stage);
-
-    var captionEl = h('<div class="kd-caption">' + esc(captions[0]) + '</div>');
-    root.appendChild(captionEl);
-
-    // Dot düğmeleri
-    var dotsWrap = h('<div class="kd-dots"></div>');
-    var dots = [];
-    for (var i = 0; i < 4; i++) {
-      var dot = h('<button type="button" class="kd-dot" aria-label="' + (i + 1) + '. adım" aria-current="' + (i === 0) + '"></button>');
-      (function (idx) { dot.addEventListener('click', function () { goTo(idx); }); })(i);
-      dots.push(dot);
-      dotsWrap.appendChild(dot);
-    }
-    root.appendChild(dotsWrap);
-
-    var current = 0;
-    var timer = null;
-
-    function goTo(idx) {
-      current = idx;
-      root.setAttribute('data-s', String(idx + 1));
-      bar.querySelector('.kd-url').textContent = urls[idx];
-      page.innerHTML = pages[idx];
-      captionEl.textContent = captions[idx];
-      dots.forEach(function (d, k) { d.setAttribute('aria-current', String(k === idx)); });
-      // Dalga konumu güncelle
-      positionRipple(idx);
-      resetTimer();
-    }
-
-    // İmleç ve dalga, o sahnedeki gerçek hedef öğenin ortasına gider (ölçü sayfaya yerleşince alınır)
-    var TARGETS = ['.kd-btn-blue', '.kd-modal .kd-btn-blue', '.kd-copy-icon', '.kd-lb-input'];
-    function positionRipple(idx) {
-      var el = page.querySelector(TARGETS[idx]), sr = stage.getBoundingClientRect();
-      if (!el || !sr.width) return;
-      var r = el.getBoundingClientRect(), x = r.left + r.width / 2 - sr.left, y = r.top + r.height / 2 - sr.top;
-      ripple.style.left = (x - 10) + 'px';
-      ripple.style.top = (y - 10) + 'px';
-      root.style.setProperty('--tx' + (idx + 1), x + 'px');
-      root.style.setProperty('--ty' + (idx + 1), y + 'px');
-    }
-    var waitFrames = 0;
-    requestAnimationFrame(function firstMeasure() {
-      if (root.isConnected) positionRipple(current);
-      else if (++waitFrames < 300) requestAnimationFrame(firstMeasure);
-    });
-
-    function advance() {
-      if (!root.isConnected) { clearInterval(timer); timer = null; return; }
-      if (document.hidden) return;
-      goTo((current + 1) % 4);
-    }
-
-    function resetTimer() {
-      if (timer) clearInterval(timer);
-      timer = setInterval(advance, 3400);
-    }
-
-    // Başlangıç konumları
-    positionRipple(0);
-    resetTimer();
-
-    return root;
-  }
-
-  // ---------- 2) phoneTip ----------
+  // ---------- Telefon rehberi (phoneTip) ----------
   var ptOpen = false;
 
   function phoneTip(opts) {
@@ -406,7 +276,7 @@
 
     // İpuçları
     var hints = h('<div class="pt-hints">' +
-      '<p class="hint">Telefonda bir şey kurman gerekmez; Mia orada da hemen çalışır. Kendi Google anahtarını kullanıyorsan onu telefondaki Learnb’ye de bir kez yapıştırman yeterli.</p>' +
+      '<p class="hint">Telefonda bir şey kurman gerekmez; Mia orada da hemen çalışır.</p>' +
       '<p class="hint">Not: Derslerin, kelimelerin ve serin her cihazda ayrı saklanır.</p></div>');
     dialog.appendChild(hints);
 
@@ -490,7 +360,6 @@
 
   // ---------- Dışa aç ----------
   window.LearnbGuide = {
-    keyDemo: keyDemo,
     phoneTip: phoneTip,
     maybePhoneTip: maybePhoneTip
   };

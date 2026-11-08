@@ -1,6 +1,6 @@
 # Learnb aracı sunucusu
 
-Bu küçük sunucu, Learnb kullanıcılarının kendi Google API anahtarı almadan Mia ile sohbet edebilmesini sağlar. Uygulama sahibinin API anahtarı yalnızca Cloudflare'in güvenli kasasında saklanır; kullanıcıların cihazına veya GitHub'a hiç ulaşmaz. Bütün kullanıcılar sahibin Google ücretsiz kullanım sınırını paylaşır; sınır dolarsa kullanıcılar Ayarlar sayfasından kendi anahtarlarını girerek uygulamayı kullanmaya devam edebilir.
+Bu küçük sunucu, Learnb kullanıcılarının hiçbir şey kurmadan Mia ile çalışabilmesini sağlar. Uygulama sahibinin API anahtarı yalnızca Cloudflare'in güvenli kasasında saklanır; kullanıcıların cihazına veya GitHub'a hiç ulaşmaz. Bütün kullanıcılar sahibin Google ücretsiz kullanım sınırını paylaşır; sınır dolarsa kullanıcılar ertesi gün sınır sıfırlanana kadar bekler. Kullanıcıların kendi anahtarını girme seçeneği yoktur.
 
 ## Güvenlik
 

@@ -119,22 +119,15 @@
   }
 
   function errText(code) {
-    // Ortak bağlantıdaki sorunlar kullanıcının anahtarıyla ilgili değil; çıkış yolu kendi anahtarını eklemek
-    if (viaRelay()) {
-      if (code === 'rate_limited') return 'Learnb\'nin ortak bağlantısı şu an çok yoğun ya da bugünkü sınırı doldu. Bir dakika sonra tekrar dene. Beklemek istemezsen Ayarlar\'dan kendi ücretsiz Google anahtarını ekleyebilirsin.';
-      if (['bad_key', 'no_free_tier', 'no_model'].includes(code)) return 'Learnb\'nin ortak bağlantısı şu an çalışmıyor. Biraz sonra tekrar dene ya da Ayarlar\'dan kendi Google anahtarını ekleyerek devam et.';
-    }
     switch (code) {
       case 'not_granted': return 'Mia\'nın çalışması için bu sayfanın Claude hesabını kullanmasına izin vermelisin. Ayarlar\'daki "İzinleri yönet" düğmesinden açabilirsin.';
       case 'sampling_disabled': case 'capability_disabled': case 'capability_removed': case 'not_declared': return 'Bu hesapta ya da bu görünümde Mia\'yı çalıştıramıyorum.';
       case 'rate_limited': return AI.provider() === 'gemini'
-        ? 'Google\'ın ücretsiz kullanım sınırına takıldın. Bir dakika bekleyip tekrar dene; günlük sınır dolduysa ertesi gün sıfırlanır.'
+        ? 'Learnb\'nin ortak bağlantısı şu an çok yoğun ya da bugünkü sınırı doldu. Biraz sonra tekrar dener misin?'
         : 'Şu an çok fazla istek gitti ya da Claude kullanım limitin doldu. Biraz bekleyip tekrar dene.';
       case 'session_expired': return 'Oturumun kapanmış. claude.ai\'ye yeniden giriş yapıp sayfayı yenile.';
-      case 'no_key': return 'Mia\'nın çalışması için önce Google anahtarını girmen gerekiyor. Ana sayfadaki kurulum kartından ya da Ayarlar\'dan bir dakikada yapabilirsin.';
-      case 'bad_key': return 'Google bu kodu kabul etmedi. Kodu eksiksiz kopyaladığından emin ol: "AQ." ya da "AIza" ile başlayan uzun bir kod olmalı.';
-      case 'no_free_tier': return 'Google bu anahtarın projesinde ücretsiz kullanımı kapatmış. Bu senin hatan değil: Google son zamanlarda bazı yeni hesap ve projelerde ücretsiz kullanıma izin vermiyor. Başka bir Google hesabıyla yeni bir anahtar almayı deneyebilirsin.';
-      case 'no_model': return 'Bu anahtarla Mia\'nın kullanabileceği bir Google modeli bulamadım. Biraz sonra tekrar dener misin?';
+      // Bunlar Learnb'nin ortak bağlantısındaki sorunlar; kullanıcının yapabileceği tek şey biraz sonra denemek
+      case 'no_key': case 'bad_key': case 'no_free_tier': case 'no_model': return 'Learnb\'nin ortak bağlantısı şu an çalışmıyor. Biraz sonra tekrar dener misin?';
       case 'bad_request': return 'Google bu isteği kabul etmedi. Biraz sonra tekrar dener misin?';
       case 'upstream_error': return 'Google\'ın sunucusu şu an çok yoğun; birkaç denemede de cevap alamadım. Biraz sonra tekrar dener misin?';
       case 'timeout': return AI.provider() === 'gemini'
@@ -187,17 +180,13 @@
   // ---------- Yapay zekâ: claude.ai içinde Claude, masaüstünde Google Gemini ----------
   // Modeli kullanıcı değil Learnb seçer: sohbet, cevap kontrolü ve kelime anlamı gibi hızlı işler en yeni
   // "flash-lite" modelle, ders yazmak en yeni "flash" modelle yapılır; ikisi de az düşünecek şekilde ayarlanır.
-  // Kendi anahtarı olmayan herkes Mia'yı Learnb'nin aracı sunucusu üzerinden kullanır (relay/ klasörü).
+  // Herkes Mia'yı Learnb'nin aracı sunucusu üzerinden kullanır (relay/ klasörü); kullanıcı hiçbir şey kurmaz.
   // Sunucu, sahibinin Google anahtarını kendisinde saklar; anahtar bu sayfaya hiç gelmez.
-  // Kullanıcı kendi anahtarını girerse istekler doğrudan Google'a gider.
   const RELAY = 'https://learnb-relay.yemreyaman1.workers.dev/v1beta/';
-  const GOOGLE = 'https://generativelanguage.googleapis.com/v1beta/';
-  const G = { key: '', fast: '', smart: '', models: [] };
-  const viaRelay = () => !G.key && !!RELAY;
-  const gBase = () => (G.key ? GOOGLE : RELAY);
-  const gHead = (h = {}) => (G.key ? { ...h, 'x-goog-api-key': G.key } : h);
+  const G = { fast: '', smart: '', models: [] };
   function loadKeys() {
-    G.key = lsGet('learnb.gkey') || '';
+    // Eski sürümlerde kullanıcının girdiği kendi anahtarı artık kullanılmaz; o anahtara göre seçilmiş modeller de sıfırlanır
+    if (lsGet('learnb.gkey') != null) ['learnb.gkey', 'learnb.gfast', 'learnb.gsmart', 'learnb.gmodels', 'learnb.gmodelsAt', 'learnb.gpick', 'learnb.gslow'].forEach(k => lsSet(k, null));
     G.fast = lsGet('learnb.gfast') || '';
     G.smart = lsGet('learnb.gsmart') || G.fast;
     try { G.models = JSON.parse(lsGet('learnb.gmodels') || '[]'); } catch (e) { G.models = []; }
@@ -207,9 +196,6 @@
   }
   loadKeys();
   const jsonCache = new Map();
-  // Google yeni anahtarları "AQ." ile başlayan biçimde veriyor; eski "AIza" anahtarlar da hâlâ kabul edilir
-  const KEY_RE = /^(AIza[\w-]{35}|AQ\.[\w.-]{30,})$/;
-  const cleanKey = k => String(k || '').replace(/\s+/g, '').replace(/^["'`]+|["'`]+$/g, '');
   // Hata nesnesini tek biçime çevirir; süre dolduysa "timeout" olur
   const asErr = (e, late) => (late ? { code: 'timeout' } : e && typeof e.code === 'string' ? e : { code: e && e.name === 'AbortError' ? 'cancelled' : 'network' });
 
@@ -305,7 +291,7 @@
     let late = false;
     const t = setTimeout(() => { late = true; ac.abort(); }, 15000);
     try {
-      const res = await gFetch(`${gBase()}models?pageSize=200`, { headers: gHead(), signal: ac.signal });
+      const res = await gFetch(`${RELAY}models?pageSize=200`, { signal: ac.signal });
       const j = await res.json();
       G.models = ((j && j.models) || []).filter(m => (m.supportedGenerationMethods || []).includes('generateContent')).map(m => String(m.name).replace(/^models\//, ''));
       lsSet('learnb.gmodels', JSON.stringify(G.models));
@@ -317,7 +303,7 @@
   // Model listesi açılışta, 3 günde bir arka planda yenilenir ve adaylar sınanır; Google daha yeni ve çalışan
   // bir model çıkarınca Learnb kendiliğinden ona geçer
   function refreshModels() {
-    if (P.sample || !(G.key || RELAY)) return;
+    if (P.sample || !RELAY) return;
     if (G.fast && lsGet('learnb.gpick') === '2' && (lsGet('learnb.gmodelsAt') || '') > addDays(today(), -3)) return;
     listModels().then(pickModels).catch(() => {});
   }
@@ -361,8 +347,8 @@
     if (stop) { if (stop.aborted) throw { code: 'cancelled' }; stop.addEventListener('abort', halt); }
     arm(ms);
     try {
-      const url = `${gBase()}models/${encodeURIComponent(model)}:${onText ? 'streamGenerateContent?alt=sse' : 'generateContent'}`;
-      const res = await gFetch(url, { method: 'POST', headers: gHead({ 'Content-Type': 'application/json' }), body: JSON.stringify(body), signal: ac.signal });
+      const url = `${RELAY}models/${encodeURIComponent(model)}:${onText ? 'streamGenerateContent?alt=sse' : 'generateContent'}`;
+      const res = await gFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: ac.signal });
       if (!onText) {
         const r = readParts(await res.json());
         if (!r.text.trim()) throw { code: r.finish === 'SAFETY' ? 'refused' : 'empty_completion' };
@@ -398,7 +384,7 @@
   const WAIT = { smart: { hedge: 7000, first: 25000, limit: 35000 }, fast: { hedge: 5000, first: 12000, limit: 20000 } };
   const RETRY = ['upstream_error', 'network', 'empty_completion'];
   function gemCall(input, { kind, onText, json }) {
-    if (!G.key && !RELAY) return Promise.reject({ code: 'no_key' });
+    if (!RELAY) return Promise.reject({ code: 'no_key' });
     if (!G.fast) return listModels().then(() => { chooseModels(); if (!G.fast) throw { code: 'no_model' }; return gemCall(input, { kind, onText, json }); });
     const w = WAIT[kind], t0 = Date.now(), left = () => w.limit - (Date.now() - t0);
     const main = kind === 'smart' ? G.smart || G.fast : G.fast;
@@ -456,27 +442,8 @@
     if (a >= 0 && b > a) { try { return JSON.parse(t.slice(a, b + 1)); } catch (e) { /* düşmez */ } }
     throw { code: 'invalid_json' };
   }
-  // Anahtarı tek ve hızlı bir istekle (model listesi) dener; geçerliyse hemen kaydeder
-  async function setupGemini(raw) {
-    const key = cleanKey(raw), old = { ...G };
-    G.key = key;
-    try {
-      await listModels();
-      chooseModels();
-      if (!G.fast) throw { code: 'no_model' };
-      // Model listesi her anahtara açık; anahtarın gerçekten çalıştığını küçük bir deneme isteği gösterir.
-      // Sunucu yoğunluğu ya da sınır gibi anahtarla ilgisi olmayan hatalarda anahtar yine kaydedilir.
-      try { await gemCall('Reply with one word: ok', { kind: 'fast' }); }
-      catch (e) { if (['bad_key', 'no_free_tier', 'no_model'].includes(e.code)) throw e; }
-      lsSet('learnb.gkey', key);
-      // Yeni anahtarın projesinde hangi modellerin çalıştığı arka planda yeniden sınanır
-      lsSet(SLOW, null);
-      pickModels().catch(() => {});
-      return G.fast;
-    } catch (e) { Object.assign(G, old); throw e; }
-  }
   const AI = {
-    ready: () => !!(P.sample || G.key || RELAY),
+    ready: () => !!(P.sample || RELAY),
     provider: () => (P.sample ? 'claude' : 'gemini'),
     async text(input, { tier = 'default', onText, fresh } = {}) {
       if (P.sample) { const o = { modelTier: tier }; if (onText) o.onText = onText; if (fresh) o.cache = false; return P.sample(input, o); }
@@ -604,14 +571,6 @@
     const hr = new Date().getHours();
     return hr < 5 ? 'İyi geceler' : hr < 12 ? 'Günaydın' : hr < 18 ? 'İyi günler' : hr < 23 ? 'İyi akşamlar' : 'İyi geceler';
   }
-  function notice() {
-    if (S.loading) return '';
-    if (!AI.ready()) return setupCard();
-    return '';
-  }
-  function setupCard() {
-    return `<div class="setup-card"><p class="tag">Kurulum · yaklaşık 1 dakika</p><h2>Mia'yı çalıştıralım</h2>${setupBody()}</div>`;
-  }
   function renderHome() {
     S.tab = 'home';
     if (!S.loading && !S.profile) return renderOnboarding();
@@ -623,7 +582,6 @@
     const due = dueWords().length;
     const dis = S.loading ? 'disabled' : '';
     m.innerHTML = `<div class="wrap home">
-      ${notice()}
       <section class="hello">
         <p class="eyebrow">${S.loading ? 'Bağlanıyor…' : greet()}</p>
         <h1>${doneToday ? 'Bugünkü dersini yaptın. Harika gidiyorsun!' : 'Bugün bir ders yapalım mı?'}</h1>
@@ -655,7 +613,6 @@
     </div>`;
     $$('[data-level]', m).forEach(b => b.onclick = () => { S.homeLevel = b.dataset.level; renderHome(); });
     $$('[data-open]', m).forEach(b => b.onclick = () => openLesson(b.dataset.open));
-    wireKey(m);
     // En az bir ders bitirmiş kullanıcıya arada bir telefonda kullanma rehberi gösterilir (sıklığını rehber belirler)
     if (!S.loading && AI.ready() && Object.keys(done).length && guide()) setTimeout(() => { if (S.tab === 'home' && !L) guide().maybePhoneTip({ url: HOME_URL }); }, 1500);
   }
@@ -1298,7 +1255,7 @@ Answer in simple, friendly Turkish in at most 120 words. Give a short English ex
     hideTyping();
     miaSay(`<p>${esc(errText(code))}</p>`, 'note');
     const perm = code === 'not_granted' && P.perms;
-    setDock(`<div class="dock-row"><button class="btn ghost" type="button" data-act="home">Derslere dön</button>${perm ? '<button class="btn ghost" type="button" data-x="perms">İzinleri yönet</button>' : ''}${['no_key', 'bad_key', 'no_free_tier'].includes(code) ? '<button class="btn primary grow" type="button" data-act="settings">Ayarları aç</button>' : '<button class="btn primary grow" type="button" data-x="again">Tekrar dene</button>'}</div>`, d => {
+    setDock(`<div class="dock-row"><button class="btn ghost" type="button" data-act="home">Derslere dön</button>${perm ? '<button class="btn ghost" type="button" data-x="perms">İzinleri yönet</button>' : ''}<button class="btn primary grow" type="button" data-x="again">Tekrar dene</button></div>`, d => {
       const a = $('[data-x=again]', d); if (a) a.onclick = () => openLesson(R.lesson.id);
       const p = $('[data-x=perms]', d); if (p) p.onclick = managePerms;
     });
@@ -1438,11 +1395,9 @@ Reply with only this JSON:
       m.innerHTML = `<div class="wrap chat-home">
         <h1>Mia ile yazış</h1>
         <p class="lead">Bir konu seç, Mia o rolde seninle yazışsın. Hatalarını kırmızı kalemle düzeltir; cevaplarının Türkçesini de görebilirsin. Seviyen: ${chatLevel()}.</p>
-        ${AI.ready() || S.loading ? '' : setupCard()}
         <div class="topics">${D.topics.map(t => `<button class="topic" type="button" data-topic="${t.id}"><b>${esc(t.t)}</b><span>${esc(t.d)}</span></button>`).join('')}</div>
       </div>`;
       $$('[data-topic]', m).forEach(b => b.onclick = () => startChat(b.dataset.topic));
-      wireKey(m);
       return;
     }
     setChrome({ top: topBack(S.chat.topic.t, 'Sohbet', 'chat-exit'), nav: false, dock: true });
@@ -1602,7 +1557,7 @@ Reply with only this JSON: {"base":"the dictionary form of the word","tr":"its T
     el.innerHTML = `<div class="sheet-back" data-x="close"></div>
       <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="st-title">
         <div class="sheet-head"><h2 id="st-title">Ayarlar</h2><button class="icon-btn" type="button" data-x="close" aria-label="Kapat">${ICON.x}</button></div>
-        ${P.sample ? '' : geminiSection()}
+        ${P.sample ? '' : aiSection()}
         <section><h3>Yazım kuralları</h3>
           <label class="switch"><input type="checkbox" data-x="strict" ${strict() ? 'checked' : ''}><span class="sw" aria-hidden="true"></span>
             <span><b>Noktalama ve büyük harf hatalarını göster</b><small>Kapalıyken Mia nokta, virgül, soru işareti ve büyük-küçük harf için seni hatalı saymaz. Bunlardan da ders çıkarmak istersen aç.</small></span></label></section>
@@ -1614,7 +1569,6 @@ Reply with only this JSON: {"base":"the dictionary form of the word","tr":"its T
         ${P.inViewer ? `<section><h3>İzinler</h3><p class="hint">Mia'nın ders hazırlaması ve cevaplarını kontrol etmesi için bu sayfanın Claude hesabını kullanmasına izin vermen gerekiyor. Bu, Claude kullanım limitinden harcar.</p><button class="btn ghost" type="button" data-x="perms">İzinleri yönet</button></section>` : ''}
         <section><h3>Sıfırla</h3><div id="reset-area"><button class="btn ghost danger" type="button" data-x="reset">Tüm ilerlemeyi sil</button></div></section>
       </div>`;
-    wireKey(el);
     $$('[data-x=close]', el).forEach(b => b.onclick = closeSheet);
     $('[data-x=strict]', el).onchange = e => {
       lsSet('learnb.strict', e.target.checked ? '1' : null);
@@ -1624,8 +1578,6 @@ Reply with only this JSON: {"base":"the dictionary form of the word","tr":"its T
     $('[data-x=level]', el).onclick = () => { closeSheet(); L = null; renderOnboarding(!!S.profile); };
     $('[data-x=placement]', el).onclick = () => { closeSheet(); L = null; renderPlacement(); };
     const pb = $('[data-x=perms]', el); if (pb) pb.onclick = managePerms;
-    const del = $('[data-x=gk-del]', el);
-    if (del) del.onclick = () => { ['learnb.gkey', 'learnb.gfast', 'learnb.gsmart', 'learnb.gmodels', 'learnb.gmodelsAt', 'learnb.gpick', SLOW].forEach(k => lsSet(k, null)); loadKeys(); closeSheet(); refreshAfterAi(); refreshModels(); };
     $('[data-x=reset]', el).onclick = () => {
       const area = $('#reset-area', el);
       area.innerHTML = '<p class="hint">Bitirdiğin dersler, serin, kelimelerin ve hataların silinir. Hazırlanmış ders içerikleri kalır. Bu geri alınamaz.</p><div class="dock-row"><button class="btn ghost" type="button" data-x="no">Vazgeç</button><button class="btn primary grow" type="button" data-x="yes">Evet, hepsini sil</button></div>';
@@ -1642,84 +1594,11 @@ Reply with only this JSON: {"base":"the dictionary form of the word","tr":"its T
   }
   function closeSheet() { const el = $('#sheet'); el.hidden = true; el.innerHTML = ''; }
 
-  // Google anahtarı: kullanıcı Google'dan alır ve yapıştırır; anahtar sadece bu cihazdaki tarayıcıda durur
-  const keyForm = ph => `<form class="key-form" data-key autocomplete="off">
-      <input class="field" type="text" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="${esc(ph)}" aria-label="Google anahtarı">
-      <div class="dock-row"><button class="btn ghost" type="button" data-x="paste">Yapıştır</button><button class="btn primary grow" type="submit">Kaydet</button></div>
-      <p class="hint" data-msg role="status"></p></form>`;
-  function setupBody(intro = true) {
-    return `${intro ? '<p>Mia\'nın seninle çalışabilmesi için Google\'dan ücretsiz bir <b>anahtar</b> alman gerekiyor. Anahtar, Mia\'yı kendi Google hesabınla çalıştıran uzun bir koddur. Bir kere girmen yeterli.</p>' : ''}
-      <div class="kd-slot"></div>
-      <p class="setup-step">1. Anahtarını Google'dan al</p>
-      <a class="btn primary wide" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google'ın anahtar sayfasını aç</a>
-      <p class="hint">Sayfa yeni sekmede açılır. Kodu kopyalayınca bu sekmeye geri dön.</p>
-      <details class="key-help"><summary>Google "Unable to create API key" (anahtar oluşturulamadı) mı diyor?</summary>
-        <p>Bazı Google hesaplarında anahtar sayfası projeyi kendisi açamıyor. Projeyi önce Google Cloud'da aç, sonra anahtarı ona bağla:</p>
-        <ol>
-          <li>Çıkan pencereyi <b>Close</b> ile kapat.</li>
-          <li><a href="https://console.cloud.google.com/projectcreate" target="_blank" rel="noopener">Google Cloud'da yeni proje sayfasını</a> aç ve <b>Create</b> düğmesine bas. İlk seferse ülkeni seçip şartları kabul etmeni ister. Kart bilgisi gerekmez.</li>
-          <li>Anahtar sayfasına dön, <b>Create API key</b> de. Açılan pencerede az önce açtığın projeyi seç; listede yoksa <b>Import project</b> ile ekle. Sonra <b>Create key</b>.</li>
-        </ol>
-      </details>
-      <p class="setup-step">2. Kodu buraya yapıştır</p>
-      ${keyForm('AQ. ile başlayan kodu yapıştır')}`;
-  }
-  function geminiSection() {
-    if (viaRelay()) return `<section id="ai-sec"><h3>Mia'nın bağlantısı</h3>
-      <p class="status on">Bağlı, Mia hazır</p>
-      <p class="hint">Mia, Learnb'nin ortak bağlantısıyla çalışıyor; senin bir şey kurman gerekmiyor. Yazdıkların Google'ın ücretsiz hizmetine gider ve Google'ın ürünlerini geliştirmek için kullanılabilir; derslere kişisel bilgi yazma.</p>
-      <details class="key-more"><summary>Kendi Google anahtarımı kullanmak istiyorum</summary>
-        <p class="hint">Ortak bağlantı çok yoğunsa ya da bugünkü sınırı dolarsa kendi ücretsiz anahtarınla beklemeden devam edebilirsin.</p>
-        ${setupBody(false)}</details></section>`;
-    if (!G.key) return `<section id="ai-sec"><h3>Mia'yı çalıştır</h3>${setupBody()}</section>`;
+  // Ayarlar'daki bağlantı bölümü: kullanıcının kuracağı bir şey yok, sadece durum ve gizlilik notu
+  function aiSection() {
     return `<section id="ai-sec"><h3>Mia'nın bağlantısı</h3>
-      <p class="status on">Bağlı, Mia kendi Google anahtarınla çalışıyor</p>
-      <details class="key-more"><summary>Anahtarı değiştir</summary>${keyForm('Yeni anahtarı yapıştır')}</details>
-      <p class="hint">Anahtar sadece bu cihazdaki tarayıcıda saklanır. Google'ın ücretsiz kullanımında günlük bir sınır vardır ve yazdıkların Google'ın ürünlerini geliştirmek için kullanılabilir; derslere kişisel bilgi yazma.</p>
-      ${RELAY ? '<p class="hint">Anahtarı silersen Mia, Learnb\'nin ortak bağlantısıyla çalışmaya devam eder.</p>' : ''}
-      <button class="btn ghost danger" type="button" data-x="gk-del">Anahtarı sil</button></section>`;
-  }
-  // Kurulum kartını ve ayarlardaki anahtar kutusunu çalıştırır; dönen rehber animasyonunu yerine koyar
-  function wireKey(root) {
-    const slot = $('.kd-slot', root), g = guide();
-    if (slot && !slot.firstChild && g) { try { slot.appendChild(g.keyDemo()); } catch (e) { /* rehber olmadan da çalışır */ } }
-    $$('[data-key]', root).forEach(form => {
-      const inp = $('input', form), msg = $('[data-msg]', form), btns = $$('button', form);
-      let busy = false;
-      const submit = async () => {
-        const key = cleanKey(inp.value);
-        if (!key) { msg.textContent = 'Önce Google\'dan aldığın kodu kutuya yapıştır.'; return inp.focus(); }
-        if (busy) return;
-        busy = true;
-        btns.forEach(b => { b.disabled = true; });
-        msg.textContent = 'Kontrol ediyorum…';
-        try {
-          await setupGemini(key);
-          inp.value = '';
-          closeSheet();
-          refreshAfterAi();
-          toast('Mia hazır! Derse başlayabilirsin.');
-        } catch (err) {
-          msg.textContent = errText(err && err.code);
-          btns.forEach(b => { b.disabled = false; });
-        }
-        busy = false;
-      };
-      form.onsubmit = e => { e.preventDefault(); submit(); };
-      // Doğru biçimde bir kod yapıştırılınca ayrıca düğmeye basmak gerekmez
-      inp.addEventListener('input', () => { if (KEY_RE.test(cleanKey(inp.value))) submit(); });
-      $('[data-x=paste]', form).onclick = async () => {
-        try {
-          const t = cleanKey(await navigator.clipboard.readText());
-          if (!t) throw new Error('boş');
-          inp.value = t;
-          submit();
-        } catch (e) { inp.focus(); msg.textContent = 'Kutuya uzun bas (bilgisayarda sağ tıkla) ve "Yapıştır"ı seç.'; }
-      };
-    });
-  }
-  function refreshAfterAi() {
-    if (S.tab === 'home') renderHome(); else if (S.tab === 'chat' && !S.chat) renderChat();
+      <p class="status on">Bağlı, Mia hazır</p>
+      <p class="hint">Mia, Learnb'nin ortak bağlantısıyla çalışıyor; senin bir şey kurman gerekmiyor. Yazdıkların Google'ın ücretsiz yapay zekâ hizmetine gider ve Google'ın ürünlerini geliştirmek için kullanılabilir; derslere kişisel bilgi yazma.</p></section>`;
   }
 
   let toastTimer = null;
@@ -1797,7 +1676,7 @@ Reply with only this JSON: {"base":"the dictionary form of the word","tr":"its T
     if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
     renderHome();
-    // Tarayıcı kaydından bir şey silindiyse yedekten geri getir (anahtar dahil)
+    // Tarayıcı kaydından bir şey silindiyse yedekten geri getir (model seçimleri dahil)
     if (await Backup.restore()) loadKeys();
     await connect();
     await loadState();
