@@ -178,7 +178,8 @@ window.LEARNB_DATA = {
     ]}
   ],
 
-  /* Seviye testi: A1'den C1'e her seviyeden 4 soru, kolaydan zora. */
+  /* Seviye testi: her seviyede bir blok. Bir bloğu geçemeyen o seviyeden başlar ve test orada biter;
+     hepsini geçen C2'den başlar. B2 ve üstü dilbilgisinin yanında kelime, kalıp ve incelik de ölçer. */
   placement: [
     { level: 'A1', q: 'I ___ a student.', o: ['am', 'is', 'are', 'be'], a: 0 },
     { level: 'A1', q: 'She ___ from Ankara.', o: ['are', 'is', 'am', 'be'], a: 1 },
@@ -193,13 +194,20 @@ window.LEARNB_DATA = {
     { level: 'B1', q: 'The man ___ lives next door is a doctor.', o: ['which', 'what', 'who', 'whose'], a: 2 },
     { level: 'B1', q: 'This bridge ___ in 1890.', o: ['built', 'is building', 'has built', 'was built'], a: 3 },
     { level: 'B2', q: 'If she had left earlier, she ___ the train.', o: ['would have caught', 'would catch', 'caught', 'had caught'], a: 0 },
-    { level: 'B2', q: 'You ___ have told me! I could have helped.', o: ['must', 'should', 'can', 'will'], a: 1 },
+    { level: 'B2', q: "I'm still not used to ___ up so early.", o: ['get', 'getting', 'have got', 'be getting'], a: 1 },
     { level: 'B2', q: 'Not only ___ late, but he also forgot the tickets.', o: ['he was', 'did he be', 'was he', 'he did'], a: 2 },
     { level: 'B2', q: 'By next June, I ___ here for ten years.', o: ['will work', 'am working', 'have worked', 'will have worked'], a: 3 },
+    { level: 'B2', q: 'The meeting has been ___ until next Friday because the manager is ill.', o: ['put off', 'put out', 'put up', 'put away'], a: 0 },
     { level: 'C1', q: '___ you need any help, just give me a call.', o: ['Should', 'Would', 'Were', 'Had'], a: 0 },
-    { level: 'C1', q: 'It\'s high time we ___ home.', o: ['go', 'went', 'will go', 'have gone'], a: 1 },
-    { level: 'C1', q: 'You ___ bought milk. We already had some.', o: ['mustn\'t have', 'couldn\'t have', 'needn\'t have', 'shouldn\'t to have'], a: 2 },
-    { level: 'C1', q: 'The new policy is thought ___ a positive effect so far.', o: ['having had', 'that it had', 'to having', 'to have had'], a: 3 }
+    { level: 'C1', q: 'Hardly ___ the house when it started to pour with rain.', o: ['I had left', 'had I left', 'did I leave', 'I left'], a: 1 },
+    { level: 'C1', q: 'You ___ bought milk. We already had plenty.', o: ["mustn't have", "couldn't have", "needn't have", "shouldn't to have"], a: 2 },
+    { level: 'C1', q: 'The new policy is thought ___ a positive effect so far.', o: ['having had', 'that it had', 'to having', 'to have had'], a: 3 },
+    { level: 'C1', q: 'He made a ___ attempt to apologise, but nobody believed he meant it.', o: ['half-hearted', 'half-baked', 'half-witted', 'half-done'], a: 0 },
+    { level: 'C2', q: 'Little ___ that his life was about to change forever.', o: ['did he know', 'he knew', 'he did know', 'knew he'], a: 0 },
+    { level: 'C2', q: 'Were it not ___ her quick thinking, the whole project would have collapsed.', o: ['with', 'for', 'by', 'without'], a: 1 },
+    { level: 'C2', q: 'The evidence, ___ it is, hardly supports such a bold claim.', o: ['as such', 'so as', 'such as', 'such that'], a: 2 },
+    { level: 'C2', q: 'She was ___ to admit that she had been wrong all along.', o: ['loathe', 'loathing', 'loathsome', 'loath'], a: 3 },
+    { level: 'C2', q: "I'd sooner you ___ mention this to anyone just yet.", o: ["didn't", "don't", "won't", "wouldn't"], a: 0 }
   ],
 
   /* Serbest sohbet konuları: Mia'nın rolü ve açılış cümlesi. */

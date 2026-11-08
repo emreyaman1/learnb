@@ -56,20 +56,36 @@
     return t.replace(/[^a-z0-9' ]+/g, ' ').replace(/\s+/g, ' ').trim();
   }
 
-  // Öğretmen kalemi: cevaptaki yanlışları çizer, doğrusunu el yazısıyla ekler
+  // Noktalama ve büyük harf: kullanıcı Ayarlar'dan açmadıkça hata sayılmaz
+  const strict = () => { try { return localStorage.getItem('learnb.strict') === '1'; } catch (e) { return false; } };
+  const squash = s => String(s ?? '').replace(/[’‘`´]/g, "'").replace(/\s+/g, ' ').trim();
+  const differs = (a, b) => (strict() ? squash(a) !== squash(b) : norm(a) !== norm(b));
+
+  // Öğretmen kalemi: cevaptaki yanlışları çizer, doğrusunu el yazısıyla ekler.
+  // Gevşek modda büyük-küçük harf ve noktalama karşılaştırılmaz: öğrencinin yazdığı aynen kalır.
   const TOK = /[A-Za-zÀ-ÿĞğİıŞşÇçÖöÜü0-9'’-]+|[^\sA-Za-zÀ-ÿĞğİıŞşÇçÖöÜü0-9'’-]/g;
-  function diffHtml(a, b) {
-    const A = String(a ?? '').match(TOK) || [], B = String(b ?? '').match(TOK) || [];
-    const n = A.length, m = B.length;
+  const isWord = t => /[A-Za-zÀ-ÿĞğİıŞşÇçÖöÜü0-9]/.test(t);
+  function diffHtml(a, b, loose = !strict()) {
+    const A = String(a ?? '').match(TOK) || [];
+    let B = String(b ?? '').match(TOK) || [];
+    const skip = A.map(t => loose && !isWord(t));
+    if (loose) B = B.filter(isWord);
+    const pos = A.map((_, k) => k).filter(k => !skip[k]), W = pos.map(k => A[k]);
+    const eq = loose ? (x, y) => x.toLowerCase().replace(/’/g, "'") === y.toLowerCase().replace(/’/g, "'") : (x, y) => x === y;
+    const n = W.length, m = B.length;
     const T = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
-    for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) T[i][j] = A[i] === B[j] ? T[i + 1][j + 1] + 1 : Math.max(T[i + 1][j], T[i][j + 1]);
-    const out = []; let i = 0, j = 0;
+    for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) T[i][j] = eq(W[i], B[j]) ? T[i + 1][j + 1] + 1 : Math.max(T[i + 1][j], T[i][j + 1]);
+    const out = []; let i = 0, j = 0, ap = 0;
+    // Öğrencinin noktalaması (gevşek modda) kendinden önceki kelimeyle birlikte olduğu gibi yazılır
+    const flush = () => { while (ap < A.length && skip[ap]) out.push(['=', A[ap++]]); };
+    const take = op => { const k = pos[i++]; out.push([op, A[k]]); ap = k + 1; flush(); };
+    flush();
     while (i < n && j < m) {
-      if (A[i] === B[j]) { out.push(['=', A[i++]]); j++; }
-      else if (T[i + 1][j] >= T[i][j + 1]) out.push(['-', A[i++]]);
+      if (eq(W[i], B[j])) { take('='); j++; }
+      else if (T[i + 1][j] >= T[i][j + 1]) take('-');
       else out.push(['+', B[j++]]);
     }
-    while (i < n) out.push(['-', A[i++]]);
+    while (i < n) take('-');
     while (j < m) out.push(['+', B[j++]]);
     const punct = t => /^[.,!?;:)]$/.test(t);
     return out.map(([op, t], k) => {
@@ -110,21 +126,75 @@
         ? 'Google\'ın ücretsiz kullanım sınırına takıldın. Bir dakika bekleyip tekrar dene; günlük sınır dolduysa ertesi gün sıfırlanır.'
         : 'Şu an çok fazla istek gitti ya da Claude kullanım limitin doldu. Biraz bekleyip tekrar dene.';
       case 'session_expired': return 'Oturumun kapanmış. claude.ai\'ye yeniden giriş yapıp sayfayı yenile.';
-      case 'no_key': return 'Mia\'nın çalışması için Ayarlar\'a Google Gemini anahtarını girmen gerekiyor.';
-      case 'bad_key': return 'Google anahtarı kabul etmedi. Ayarlar\'dan anahtarı kontrol et.';
-      case 'no_model': return 'Bu anahtarla kullanılabilecek ücretsiz bir Gemini modeli bulamadım. Ayarlar\'dan başka bir model seçmeyi dene.';
-      case 'bad_request': return 'Google bu isteği kabul etmedi. Ayarlar\'dan başka bir model seçmeyi dene.';
+      case 'no_key': return 'Mia\'nın çalışması için önce Google anahtarını girmen gerekiyor. Ana sayfadaki kurulum kartından ya da Ayarlar\'dan bir dakikada yapabilirsin.';
+      case 'bad_key': return 'Google bu kodu kabul etmedi. Kodu eksiksiz kopyaladığından emin ol: "AIza" ile başlayan, 39 harflik bir kod olmalı.';
+      case 'no_model': return 'Bu anahtarla Mia\'nın kullanabileceği bir Google modeli bulamadım. Biraz sonra tekrar dener misin?';
+      case 'bad_request': return 'Google bu isteği kabul etmedi. Biraz sonra tekrar dener misin?';
+      case 'upstream_error': return 'Google\'ın sunucusu şu an çok yoğun; birkaç denemede de cevap alamadım. Biraz sonra tekrar dener misin?';
+      case 'timeout': return 'Cevap çok gecikti. İnternet bağlantını kontrol edip tekrar dener misin?';
+      case 'empty_completion': case 'invalid_json': return 'Mia\'nın cevabı yarım geldi. Tekrar dener misin?';
       case 'network': return 'İnternete bağlanamadım. Bağlantını kontrol edip tekrar dene.';
       case 'refused': return 'Bu isteğe cevap veremedim. Farklı bir şekilde dener misin?';
       default: return 'Bir şeyler ters gitti. Tekrar dener misin?';
     }
   }
 
-  // ---------- Yapay zekâ: claude.ai içinde Claude, masaüstünde Google Gemini ----------
+  // ---------- Tarayıcı kaydı ve otomatik yedek ----------
+  // Her kayıt tarayıcının iki ayrı deposuna yazılır (localStorage ve IndexedDB). Biri silinirse açılışta
+  // öbüründen kendiliğinden geri gelir; kullanıcının yedek indirmesi gerekmez.
+  const Backup = (() => {
+    let dbp = null;
+    const open = () => dbp || (dbp = new Promise((res, rej) => {
+      try {
+        const r = indexedDB.open('learnb-yedek', 1);
+        r.onupgradeneeded = () => r.result.createObjectStore('kv');
+        r.onsuccess = () => res(r.result);
+        r.onerror = () => rej(r.error);
+      } catch (e) { rej(e); }
+    }));
+    return {
+      put(k, v) {
+        open().then(db => { const st = db.transaction('kv', 'readwrite').objectStore('kv'); if (v == null) st.delete(k); else st.put(String(v), k); }).catch(() => {});
+      },
+      // Tarayıcı kaydında eksik olanları yedekten geri koyar, yedekte olmayanları yedeğe yazar; geri gelen kayıt sayısını döner
+      async restore() {
+        let back = 0;
+        try {
+          const rows = await open().then(db => new Promise((res, rej) => {
+            const out = [], c = db.transaction('kv').objectStore('kv').openCursor();
+            c.onsuccess = () => { const cur = c.result; if (cur) { out.push([cur.key, cur.value]); cur.continue(); } else res(out); };
+            c.onerror = () => rej(c.error);
+          }));
+          const have = new Set(rows.map(r => r[0]));
+          rows.forEach(([k, v]) => { if (localStorage.getItem(k) == null) { localStorage.setItem(k, v); back++; } });
+          for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith('learnb.') && !have.has(k)) this.put(k, localStorage.getItem(k)); }
+        } catch (e) { /* yedek deposu kullanılamıyor: yalnızca tarayıcı kaydı kullanılır */ }
+        return back;
+      }
+    };
+  })();
   const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
-  const lsSet = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) { /* yok say */ } };
-  const G = { key: lsGet('learnb.gkey') || '', model: lsGet('learnb.gmodel') || '', models: [], base: 'https://generativelanguage.googleapis.com/v1beta/' };
+  const lsSet = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) { /* yok say */ } Backup.put(k, v); };
+
+  // ---------- Yapay zekâ: claude.ai içinde Claude, masaüstünde Google Gemini ----------
+  // Modeli kullanıcı değil Learnb seçer: sohbet, cevap kontrolü ve kelime anlamı gibi hızlı işler en yeni
+  // "flash-lite" modelle, ders yazmak en yeni "flash" modelle yapılır; ikisi de az düşünecek şekilde ayarlanır.
+  const G = { key: '', fast: '', smart: '', models: [], base: 'https://generativelanguage.googleapis.com/v1beta/' };
+  function loadKeys() {
+    G.key = lsGet('learnb.gkey') || '';
+    G.fast = lsGet('learnb.gfast') || '';
+    G.smart = lsGet('learnb.gsmart') || G.fast;
+    try { G.models = JSON.parse(lsGet('learnb.gmodels') || '[]'); } catch (e) { G.models = []; }
+    if (!Array.isArray(G.models)) G.models = [];
+    // Eski sürümün kullanıcıya seçtirdiği model artık kullanılmıyor
+    if (lsGet('learnb.gmodel') != null) { lsSet('learnb.gmodel', null); lsSet('learnb.gnothink', null); }
+  }
+  loadKeys();
   const jsonCache = new Map();
+  const KEY_RE = /^AIza[0-9A-Za-z_-]{35}$/;
+  const cleanKey = k => String(k || '').replace(/\s+/g, '').replace(/^["'`]+|["'`]+$/g, '');
+  // Hata nesnesini tek biçime çevirir; süre dolduysa "timeout" olur
+  const asErr = (e, late) => (late ? { code: 'timeout' } : e && typeof e.code === 'string' ? e : { code: e && e.name === 'AbortError' ? 'cancelled' : 'network' });
 
   function httpCode(status, msg) {
     if (status === 400) return /api key/i.test(msg) ? 'bad_key' : 'bad_request';
@@ -151,7 +221,60 @@
     const text = ((c && c.content && c.content.parts) || []).filter(p => !p.thought).map(p => p.text || '').join('');
     return { text, finish: (c && c.finishReason) || '' };
   }
-  function gemBody(input, { tier, json }) {
+
+  // Hızlı işlerde "flash-lite", ders yazmada "flash" öne çıkar; yeni sürüm eskisinden, kararlı sürüm denemeden önce gelir
+  function modelScore(n, kind) {
+    if (!/^gemini-\d/.test(n) || /(image|tts|live|audio|embed|vision|robotic|computer|native|learnlm|gemma|thinking)/.test(n)) return -1;
+    const lite = /flash-lite/.test(n);
+    if (!lite && !/flash/.test(n)) return -1;
+    let s = parseFloat((n.match(/^gemini-(\d+(?:\.\d+)?)/) || [])[1] || '0') * 100;
+    if ((kind === 'fast') === lite) s += 30;
+    if (/preview|exp/.test(n)) s -= 40;
+    if (/latest|-\d{3}$/.test(n)) s -= 5;
+    return s;
+  }
+  const ranked = kind => G.models.map(n => [n, modelScore(n, kind)]).filter(x => x[1] > 0).sort((a, b) => b[1] - a[1]).map(x => x[0]);
+  function chooseModels() {
+    G.fast = ranked('fast')[0] || '';
+    G.smart = ranked('smart')[0] || G.fast;
+    lsSet('learnb.gfast', G.fast || null);
+    lsSet('learnb.gsmart', G.smart || null);
+  }
+  async function listModels() {
+    const ac = new AbortController();
+    let late = false;
+    const t = setTimeout(() => { late = true; ac.abort(); }, 15000);
+    try {
+      const res = await gFetch(`${G.base}models?pageSize=200`, { headers: { 'x-goog-api-key': G.key }, signal: ac.signal });
+      const j = await res.json();
+      G.models = ((j && j.models) || []).filter(m => (m.supportedGenerationMethods || []).includes('generateContent')).map(m => String(m.name).replace(/^models\//, ''));
+      lsSet('learnb.gmodels', JSON.stringify(G.models));
+      lsSet('learnb.gmodelsAt', today());
+      return G.models;
+    } catch (e) { throw asErr(e, late); }
+    finally { clearTimeout(t); }
+  }
+  // Model listesi birkaç günde bir arka planda yenilenir; Google daha yeni bir model çıkarınca Learnb kendiliğinden ona geçer
+  function refreshModels() {
+    if (P.sample || !G.key) return;
+    if (G.fast && (lsGet('learnb.gmodelsAt') || '') > addDays(today(), -3)) return;
+    listModels().then(chooseModels).catch(() => {});
+  }
+
+  // Düşünme ayarı: önce en azı denenir; model tanımazsa bir sonraki, o da olmazsa ayarsız gönderilir
+  function thinkFor(model, kind) {
+    const bad = (lsGet('learnb.gthink.' + model) || '').split(',');
+    if (/^gemini-2\.5/.test(model)) return bad.includes('budget') ? null : { thinkingBudget: kind === 'fast' ? 0 : 1024 };
+    if (!/^gemini-[3-9]/.test(model)) return null;
+    const lvl = (kind === 'fast' ? ['minimal', 'low'] : ['low', 'minimal']).find(l => !bad.includes(l));
+    return lvl ? { thinkingLevel: lvl } : null;
+  }
+  function thinkFailed(model, think) {
+    const k = 'learnb.gthink.' + model, bad = (lsGet(k) || '').split(',').filter(Boolean);
+    bad.push(think.thinkingLevel || 'budget');
+    lsSet(k, bad.join(','));
+  }
+  function gemBody(model, input, { json, think }) {
     const turns = typeof input === 'string' ? [{ role: 'user', content: input }] : input;
     const contents = [];
     turns.forEach(t => {
@@ -160,105 +283,81 @@
       if (last && last.role === role) last.parts[0].text += '\n\n' + t.content;
       else contents.push({ role, parts: [{ text: t.content }] });
     });
-    const gc = { temperature: json ? 0.3 : 0.8 };
+    const gc = {};
+    // Gemini 3 ve sonrası varsayılan sıcaklıkta çalışmalı; düşük değer cevabın kendini tekrar etmesine yol açabiliyor
+    if (!/^gemini-[3-9]/.test(model)) gc.temperature = json ? 0.3 : 0.8;
     if (json) gc.responseMimeType = 'application/json';
-    if (tier === 'quick' && lsGet('learnb.gnothink') !== G.model) {
-      if (/2\.5-flash/.test(G.model)) gc.thinkingConfig = { thinkingBudget: 0 };
-      else if (/^gemini-[3-9]/.test(G.model)) gc.thinkingConfig = { thinkingLevel: 'low' };
-    }
+    if (think) gc.thinkingConfig = think;
     return { contents, generationConfig: gc };
   }
-  async function gem(body, { onText } = {}) {
-    const url = `${G.base}models/${encodeURIComponent(G.model)}:${onText ? 'streamGenerateContent?alt=sse' : 'generateContent'}`;
-    const res = await gFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': G.key }, body: JSON.stringify(body) });
-    if (!onText) {
-      const r = readParts(await res.json());
-      if (!r.text.trim()) throw { code: r.finish === 'SAFETY' ? 'refused' : 'empty_completion' };
-      return { text: r.text, truncated: r.finish === 'MAX_TOKENS' };
-    }
-    const reader = res.body.getReader(), dec = new TextDecoder();
-    let buf = '', text = '', finish = '';
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buf += dec.decode(value, { stream: true });
-      let i;
-      while ((i = buf.indexOf('\n')) >= 0) {
-        const line = buf.slice(0, i).trim();
-        buf = buf.slice(i + 1);
-        if (!line.startsWith('data:')) continue;
-        let j;
-        try { j = JSON.parse(line.slice(5).trim()); } catch (e) { continue; }
-        const r = readParts(j);
-        if (r.finish) finish = r.finish;
-        if (r.text) { text += r.text; onText({ text, delta: r.text }); }
-      }
-    }
-    if (!text.trim()) throw { code: finish === 'SAFETY' ? 'refused' : 'empty_completion' };
-    return { text, truncated: finish === 'MAX_TOKENS' };
-  }
-  async function listModels() {
-    const res = await gFetch(`${G.base}models?pageSize=200`, { headers: { 'x-goog-api-key': G.key } });
-    const j = await res.json();
-    G.models = ((j && j.models) || []).filter(m => (m.supportedGenerationMethods || []).includes('generateContent')).map(m => String(m.name).replace(/^models\//, ''));
-    return G.models;
-  }
-  // Ücretsiz katmanda en çok "flash" modelleri var: en yeni flash önce, sonra flash-lite
-  function rankModels(list) {
-    const score = n => {
-      if (!/^gemini-/.test(n) || /(image|tts|live|audio|embed|vision|robotic|computer|native|learnlm|gemma)/.test(n)) return -1;
-      const v = parseFloat((n.match(/^gemini-(\d+(?:\.\d+)?)/) || [])[1] || '0');
-      let s = v * 100;
-      if (/flash-lite/.test(n)) s += 10; else if (/flash/.test(n)) s += 30; else return -1;
-      if (/preview|exp/.test(n)) s -= 40;
-      if (/latest/.test(n)) s -= 5;
-      return s;
-    };
-    return list.filter(n => score(n) > 0).sort((a, b) => score(b) - score(a));
-  }
-  async function pickModel() {
-    const ranked = rankModels(await listModels());
-    if (!ranked.length) throw { code: 'no_model' };
-    G.model = ranked[0];
-    lsSet('learnb.gmodel', G.model);
-  }
-  // Anahtarı kaydeder ve kısa bir deneme isteğiyle çalışan bir model bulur
-  async function setupGemini(key) {
-    const old = { ...G };
-    G.key = key;
+  // Tek istek. Süre dolarsa istek kesilir; akışta her yeni parça süreyi yeniden başlatır
+  async function gem(model, body, { onText, ms }) {
+    const ac = new AbortController();
+    let late = false, timer = null;
+    const arm = t => { clearTimeout(timer); timer = setTimeout(() => { late = true; ac.abort(); }, t); };
+    arm(ms);
     try {
-      const ranked = rankModels(await listModels());
-      let last = { code: 'no_model' };
-      for (const m of ranked.slice(0, 5)) {
-        G.model = m;
-        try {
-          await gem(gemBody('Reply with only the word OK.', { tier: 'quick' }));
-          lsSet('learnb.gkey', key); lsSet('learnb.gmodel', m);
-          return m;
-        } catch (e) {
-          if (e.code === 'bad_key' || e.code === 'network') throw e;
-          if (e.code === 'bad_request') { try { await gem(gemBody('Reply with only the word OK.', {})); lsSet('learnb.gkey', key); lsSet('learnb.gmodel', m); lsSet('learnb.gnothink', m); return m; } catch (e2) { last = e2; continue; } }
-          last = e;
+      const url = `${G.base}models/${encodeURIComponent(model)}:${onText ? 'streamGenerateContent?alt=sse' : 'generateContent'}`;
+      const res = await gFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': G.key }, body: JSON.stringify(body), signal: ac.signal });
+      if (!onText) {
+        const r = readParts(await res.json());
+        if (!r.text.trim()) throw { code: r.finish === 'SAFETY' ? 'refused' : 'empty_completion' };
+        return { text: r.text, truncated: r.finish === 'MAX_TOKENS' };
+      }
+      const reader = res.body.getReader(), dec = new TextDecoder();
+      let buf = '', text = '', finish = '';
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let i;
+        while ((i = buf.indexOf('\n')) >= 0) {
+          const line = buf.slice(0, i).trim();
+          buf = buf.slice(i + 1);
+          if (!line.startsWith('data:')) continue;
+          let j;
+          try { j = JSON.parse(line.slice(5).trim()); } catch (e) { continue; }
+          const r = readParts(j);
+          if (r.finish) finish = r.finish;
+          if (r.text) { arm(30000); text += r.text; onText({ text, delta: r.text }); }
         }
       }
-      throw last;
-    } catch (e) { Object.assign(G, old); throw e; }
+      if (!text.trim()) throw { code: finish === 'SAFETY' ? 'refused' : 'empty_completion' };
+      return { text, truncated: finish === 'MAX_TOKENS' };
+    } catch (e) { throw asErr(e, late); }
+    finally { clearTimeout(timer); }
   }
-  async function gemCall(input, { tier, onText, json }) {
+  // Kısa süreli aksaklıklarda (sunucu yoğun, cevap yarım ya da geç) aynı model bir kez daha denenir;
+  // sınır dolarsa ya da yine olmazsa sıradaki modele geçilir. Kullanıcı yalnızca hepsi başarısız olursa hata görür.
+  const TRANSIENT = ['upstream_error', 'network', 'timeout', 'empty_completion', 'invalid_json'];
+  async function gemCall(input, { kind, onText, json }) {
     if (!G.key) throw { code: 'no_key' };
-    if (!G.model) await pickModel();
-    const body = gemBody(input, { tier, json });
-    try { return await gem(body, { onText }); }
-    catch (e) {
-      // Bazı modeller "düşünme" ayarını tanımaz: ayarsız bir kez daha dene
-      if (e.code === 'bad_request' && body.generationConfig.thinkingConfig) {
-        delete body.generationConfig.thinkingConfig;
-        const r = await gem(body, { onText });
-        lsSet('learnb.gnothink', G.model); // bu model ayarı tanımıyor: bir daha gönderme
-        return r;
+    if (!G.fast) { await listModels(); chooseModels(); if (!G.fast) throw { code: 'no_model' }; }
+    const first = kind === 'smart' ? G.smart || G.fast : G.fast;
+    const order = [first, ...ranked(kind).filter(m => m !== first)].slice(0, 3);
+    const ms = kind === 'smart' ? 60000 : 25000, limit = kind === 'smart' ? 120000 : 45000, t0 = Date.now();
+    const relay = onText && (x => { sent = true; onText(x); });
+    let last = null, sent = false;
+    for (const model of order) {
+      let tries = 0;
+      while (tries < 2) {
+        if (last && Date.now() - t0 > limit) throw last;
+        const think = thinkFor(model, kind);
+        try {
+          const r = await gem(model, gemBody(model, input, { json, think }), { onText: relay, ms });
+          if (json) r.value = parseJsonLoose(r.text);
+          return r;
+        } catch (e) {
+          last = e;
+          if (sent || ['bad_key', 'cancelled', 'refused'].includes(e.code)) throw e;
+          if (e.code === 'bad_request' && think) { thinkFailed(model, think); continue; }
+          if (!TRANSIENT.includes(e.code)) break;
+          if (++tries < 2) await sleep(600 + Math.random() * 700);
+        }
       }
-      throw e;
+      if (last && last.code === 'no_model') { G.models = G.models.filter(m => m !== model); lsSet('learnb.gmodels', JSON.stringify(G.models)); chooseModels(); }
     }
+    throw last || { code: 'upstream_error' };
   }
   function parseJsonLoose(text) {
     const t = String(text || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
@@ -268,17 +367,29 @@
     if (a >= 0 && b > a) { try { return JSON.parse(t.slice(a, b + 1)); } catch (e) { /* düşmez */ } }
     throw { code: 'invalid_json' };
   }
+  // Anahtarı tek ve hızlı bir istekle (model listesi) dener; geçerliyse hemen kaydeder
+  async function setupGemini(raw) {
+    const key = cleanKey(raw), old = { ...G };
+    G.key = key;
+    try {
+      await listModels();
+      chooseModels();
+      if (!G.fast) throw { code: 'no_model' };
+      lsSet('learnb.gkey', key);
+      return G.fast;
+    } catch (e) { Object.assign(G, old); throw e; }
+  }
   const AI = {
     ready: () => !!(P.sample || G.key),
     provider: () => (P.sample ? 'claude' : 'gemini'),
     async text(input, { tier = 'default', onText, fresh } = {}) {
       if (P.sample) { const o = { modelTier: tier }; if (onText) o.onText = onText; if (fresh) o.cache = false; return P.sample(input, o); }
-      return gemCall(input, { tier, onText });
+      return gemCall(input, { kind: tier === 'default' ? 'smart' : 'fast', onText });
     },
     async json(input, { tier = 'default', fresh, cacheKey } = {}) {
       if (P.sample) { const o = { modelTier: tier }; if (fresh) o.cache = false; else if (cacheKey) o.cache = { gcTime: 86400000 }; return P.sample.json(input, o); }
       if (cacheKey && jsonCache.has(cacheKey)) return jsonCache.get(cacheKey);
-      const v = parseJsonLoose((await gemCall(input, { tier, json: true })).text);
+      const v = (await gemCall(input, { kind: tier === 'default' ? 'smart' : 'fast', json: true })).value;
       if (cacheKey) jsonCache.set(cacheKey, v);
       return v;
     }
@@ -297,7 +408,7 @@
     },
     save(name, obj) {
       const data = JSON.parse(JSON.stringify(obj));
-      if (P.mode !== 'db') { try { localStorage.setItem('learnb.' + name, JSON.stringify(data)); } catch (e) { /* tarayıcı kaydı kapalı */ } return Promise.resolve(); }
+      if (P.mode !== 'db') { lsSet('learnb.' + name, JSON.stringify(data)); return Promise.resolve(); }
       this.pending[name] = data;
       if (!this.busy[name]) this.busy[name] = this.flush(name);
       return this.busy[name];
@@ -318,7 +429,7 @@
     },
     async remove(name) {
       if (P.mode === 'db') { try { await P.db.doc(this.path(name)).delete(); } catch (e) { saveFailed(e); } return; }
-      try { localStorage.removeItem('learnb.' + name); } catch (e) { /* yok say */ }
+      lsSet('learnb.' + name, null);
     }
   };
   function saveFailed(e) {
@@ -326,8 +437,8 @@
     toast(e && e.code === 'quota_exceeded' ? 'Kayıt alanı doldu. Defterindeki eski hataları temizlemeyi dene.' : 'Son değişiklik kaydedilemedi. İnternet bağlantını kontrol et.');
   }
   const RESUME = 'learnb.resume';
-  function getResume() { try { return JSON.parse(localStorage.getItem(RESUME) || 'null'); } catch (e) { return null; } }
-  function setResume(v) { try { v ? localStorage.setItem(RESUME, JSON.stringify(v)) : localStorage.removeItem(RESUME); } catch (e) { /* yok say */ } }
+  function getResume() { try { return JSON.parse(lsGet(RESUME) || 'null'); } catch (e) { return null; } }
+  function setResume(v) { lsSet(RESUME, v ? JSON.stringify(v) : null); }
 
   // ---------- Durum ----------
   const S = { profile: null, vocab: { words: {} }, mistakes: { items: [] }, loading: true, tab: 'home', homeLevel: null, notesTab: 'words', docs: {}, chat: null };
@@ -338,7 +449,8 @@
     const first = LESSONS.find(l => l.level === level) || LESSONS[0];
     return { v: 1, level, start: first.idx, tier: 'quick', streak: { n: 0, last: null }, done: {}, created: today() };
   }
-  const tier = () => (S.profile && S.profile.tier === 'careful' ? 'default' : 'quick');
+  // Cevap hızını kullanıcı değil Learnb seçer: sohbet, kontrol ve sorular hep hızlı modelle yapılır
+  const tier = () => 'quick';
   function streakNow() {
     const s = S.profile && S.profile.streak;
     if (!s || !s.last) return 0;
@@ -402,9 +514,7 @@
     return '';
   }
   function setupCard() {
-    return `<div class="setup-card"><p class="tag">Kurulum</p><h2>Mia'yı çalıştıralım</h2>
-      <p>Mia'nın ders hazırlaması, cevaplarını kontrol etmesi ve seninle yazışması için ücretsiz bir Google Gemini anahtarı gerekiyor. Bir kere girmen yeterli.</p>
-      <button class="btn primary" type="button" data-act="settings">Anahtarı gir</button></div>`;
+    return `<div class="setup-card"><p class="tag">Kurulum · yaklaşık 1 dakika</p><h2>Mia'yı çalıştıralım</h2>${setupBody()}</div>`;
   }
   function renderHome() {
     S.tab = 'home';
@@ -449,6 +559,9 @@
     </div>`;
     $$('[data-level]', m).forEach(b => b.onclick = () => { S.homeLevel = b.dataset.level; renderHome(); });
     $$('[data-open]', m).forEach(b => b.onclick = () => openLesson(b.dataset.open));
+    wireKey(m);
+    // En az bir ders bitirmiş kullanıcıya arada bir telefonda kullanma rehberi gösterilir (sıklığını rehber belirler)
+    if (!S.loading && AI.ready() && Object.keys(done).length && guide()) setTimeout(() => { if (S.tab === 'home' && !L) guide().maybePhoneTip({ url: HOME_URL }); }, 1500);
   }
 
   // ---------- Karşılama ve seviye ----------
@@ -462,7 +575,7 @@
         <p>Seninle her gün kısa derslerle İngilizce çalışacağız. Her derste yeni bir şey öğrenecek, alıştırma yapacak ve benimle yazışarak pratik yapacaksın. Açıklamaların hepsi Türkçe.</p></div></div>`}
       <h2>Nereden başlayalım?</h2>
       <div class="ob-levels">${D.levels.map(l => `<button class="ob-level" type="button" data-start="${l.id}"><b>${l.id}</b><span><strong>${esc(l.name)}</strong><small>${esc(l.note)}</small></span></button>`).join('')}</div>
-      <button class="btn ghost wide" type="button" data-act="placement">Seviyemi bilmiyorum, kısa bir test yapalım (${D.placement.length} soru)</button>
+      <button class="btn ghost wide" type="button" data-act="placement">Seviyemi bilmiyorum, kısa bir test yapalım (en fazla ${D.placement.length} soru)</button>
     </div>`;
     $$('[data-start]', m).forEach(b => b.onclick = () => startAt(b.dataset.start));
   }
@@ -474,15 +587,32 @@
     S.homeLevel = level;
     renderHome();
   }
+  // Seviye testi bloklar hâlinde ilerler: bir seviyenin sorularının en az dörtte üçünü bilen sonrakine geçer.
+  // Geçemediği seviyede test biter ve o seviyeden başlar; hepsini geçen en üst seviyeden başlar.
+  const passMark = n => Math.ceil(n * 0.75);
   function renderPlacement() {
     S.tab = 'home';
     const qs = D.placement, score = Object.fromEntries(D.levels.map(l => [l.id, 0]));
     const tested = D.levels.filter(l => qs.some(q => q.level === l.id)).map(l => l.id);
-    let i = 0;
+    const count = id => qs.filter(q => q.level === id).length;
+    const seen = new Set();
+    let i = 0, level = null;
     setChrome({ top: topBack('Seviye testi', 'Her soruda boşluğa uygun olanı seç', S.profile ? 'home' : 'onboard'), nav: false });
     const m = main(); m.className = 'main';
+    const answer = ok => {
+      const q = qs[i];
+      seen.add(q.level);
+      if (ok) score[q.level]++;
+      i++;
+      // Blok bittiyse: geçemediyse test burada biter
+      if (i >= qs.length || qs[i].level !== q.level) {
+        if (score[q.level] < passMark(count(q.level))) level = q.level;
+        else if (i >= qs.length) level = q.level;
+      }
+      draw();
+    };
     const draw = () => {
-      if (i >= qs.length) return result();
+      if (level) return result();
       const q = qs[i];
       m.innerHTML = `<div class="wrap placement">
         <div class="pl-meta"><span>Soru ${i + 1} / ${qs.length}</span><span>${q.level}</span></div>
@@ -491,19 +621,16 @@
         <div class="options">${q.o.map((o, k) => `<button class="opt" type="button" data-k="${k}"><span class="key">${'ABCD'[k]}</span><span>${esc(o)}</span></button>`).join('')}</div>
         <button class="link" type="button" data-skip>Bilmiyorum, geç</button>
       </div>`;
-      $$('.opt', m).forEach(b => b.onclick = () => { if (+b.dataset.k === q.a) score[q.level]++; i++; draw(); });
-      $('[data-skip]', m).onclick = () => { i++; draw(); };
+      $$('.opt', m).forEach(b => b.onclick = () => answer(+b.dataset.k === q.a));
+      $('[data-skip]', m).onclick = () => answer(false);
     };
     const result = () => {
-      const total = Object.values(score).reduce((a, b) => a + b, 0);
-      // Bir seviyede 3 ve üstü doğru yapan bir sonraki seviyeden başlar
-      let level = 'A1';
-      for (let k = 0; k < tested.length - 1; k++) { if (score[tested[k]] >= 3) level = tested[k + 1]; else break; }
-      if (total <= 2) level = 'A1';
+      const total = Object.values(score).reduce((a, b) => a + b, 0), asked = qs.filter(q => seen.has(q.level)).length;
+      const top = level === tested[tested.length - 1] && score[level] >= passMark(count(level));
       m.innerHTML = `<div class="wrap placement">
         <h2>Önerim: ${level} · ${esc(LEVEL[level].name)}</h2>
-        <p class="lead">${qs.length} sorudan ${total} tanesini doğru cevapladın. Seviyelere göre sonuçların:</p>
-        <ul class="pl-bars">${tested.map(id => { const n = qs.filter(q => q.level === id).length; return `<li><b>${id}</b><span class="bar"><i style="width:${(score[id] / n) * 100}%"></i></span><span>${score[id]}/${n}</span></li>`; }).join('')}</ul>
+        <p class="lead">${asked} sorudan ${total} tanesini doğru cevapladın. ${top ? 'Bütün seviyeleri geçtin; en üst seviyeden başlayabilirsin.' : `${level} sorularında zorlandığın için buradan başlamanı öneriyorum.`}</p>
+        <ul class="pl-bars">${tested.map(id => { const n = count(id); return `<li><b>${id}</b>${seen.has(id) ? `<span class="bar"><i style="width:${(score[id] / n) * 100}%"></i></span><span>${score[id]}/${n}</span>` : '<span class="bar"></span><span>—</span>'}</li>`; }).join('')}</ul>
         <button class="btn primary wide" type="button" data-start="${level}">${level} seviyesinden başla</button>
         <button class="btn ghost wide" type="button" data-other>Başka bir seviye seç</button>
       </div>`;
@@ -905,7 +1032,14 @@ Rules:
       miaSay(`<p class="tag">Çeviri</p><p>${fmt(s.q)}</p><p class="tr-big">${esc(s.tr)}</p>`);
       textDock('İngilizcesini yaz…', v => {
         meSay(`<span class="en">${esc(v)}</span>`);
-        if ([s.answer, ...s.alts].some(a => norm(a) === norm(v))) { record(true, null); feedback('ok', ''); return continueDock(); }
+        const refs = [s.answer, ...s.alts], hit = refs.find(a => norm(a) === norm(v));
+        if (hit && refs.some(a => !differs(a, v))) { record(true, null); feedback('ok', ''); return continueDock(); }
+        if (hit) {
+          // Kelimeler doğru, sadece noktalama ya da büyük harf farklı (bu kontrol Ayarlar'dan açıldıysa)
+          record(true, { q: s.tr, yours: v, right: hit, why: 'Kelimeler doğru; sadece noktalama ya da büyük harf hatası var.' });
+          feedback('almost', `<p class="redpen en">${diffHtml(v, hit)}</p><p>Kelimeler doğru; sadece noktalama ya da büyük harf farkı var.</p>`, 'Neredeyse!');
+          return continueDock();
+        }
         aiCheck('translate', s, v);
       });
     },
@@ -916,7 +1050,7 @@ Rules:
     dialogue(s) {
       miaSay(`<p class="tag">Sohbet pratiği</p>${s.scene ? `<p>${fmt(s.scene)}</p>` : ''}${s.goal ? `<p class="hint">Hedef: ${fmt(s.goal)}</p>` : ''}<p class="hint">Kısa cevaplar yeterli. Hata yaparsan kırmızı kalemle düzeltirim. Kelimeye takılırsan Türkçe yazabilirsin.</p>`);
       L.chat = {
-        rules: chatRules({ role: s.role, scene: s.scene, goal: s.goal, level: L.lesson.level, focus: L.lesson.f }),
+        o: { role: s.role, scene: s.scene, goal: s.goal, level: L.lesson.level, focus: L.lesson.f },
         turns: [{ role: 'assistant', content: JSON.stringify({ fixed: null, note: '', reply: s.opening, reply_tr: s.opening_tr }) }],
         n: 0, inLesson: true
       };
@@ -946,7 +1080,7 @@ Rules:
 ${task}
 Learner's answer: """${v}"""
 
-Judge the answer. Accept any natural, grammatical answer that does the task, even if it differs from the reference. Do not count a missing final full stop or a lowercase first letter as a mistake.
+Judge the answer. Accept any natural, grammatical answer that does the task, even if it differs from the reference. ${strict() ? 'Punctuation and capitalization count too: if they are the only problem, use "almost" and fix them in "corrected".' : 'Ignore punctuation and capitalization completely: they are never a mistake, and keep the learner\'s own punctuation and capital letters in "corrected".'}
 Reply with only this JSON:
 {"verdict":"correct" or "almost" or "wrong","corrected":"the learner's answer with the fewest changes needed to make it correct (identical if it is already correct)","feedback":"1–2 short, friendly sentences in Turkish: what is good and, if there is a mistake, what it is and why. Wrap English words in **double asterisks**.","better":"a more natural English version if there is a clearly better one, otherwise an empty string"}
 Use "almost" only for one small slip (spelling, an article, one missing small word). If the answer is in Turkish or does not do the task, use "wrong" and put a correct English answer in "corrected".`;
@@ -959,8 +1093,10 @@ Use "almost" only for one small slip (spelling, an article, one missing small wo
       const r = await AI.json(gradePrompt(kind, s, v), { tier: tier() });
       if (R !== L) return;
       hideTyping();
-      const verdict = ['correct', 'almost', 'wrong'].includes(r && r.verdict) ? r.verdict : 'wrong';
+      let verdict = ['correct', 'almost', 'wrong'].includes(r && r.verdict) ? r.verdict : 'wrong';
       let corrected = str(r && r.corrected, 400) || (kind === 'translate' ? s.answer : v);
+      // Tek fark noktalama ya da büyük harfse ve bu kontrol kapalıysa cevap doğrudur
+      if (verdict === 'almost' && !differs(v, corrected)) verdict = 'correct';
       if (verdict === 'correct') corrected = v;
       const fb = str(r && r.feedback, 600), better = str(r && r.better, 400);
       record(verdict !== 'wrong', verdict === 'correct' ? null : { q: kind === 'translate' ? s.tr : s.q, yours: v, right: corrected, why: fb });
@@ -1151,19 +1287,20 @@ Answer in simple, friendly Turkish in at most 120 words. Give a short English ex
     return `You are Mia, a friendly English tutor chatting by text with a Turkish learner whose level is ${o.level} (CEFR).
 Role-play. ${o.scene ? `Situation (in Turkish): ${o.scene} ` : ''}You play: ${o.role}.${o.goal ? `\nThe learner's goal (in Turkish): ${o.goal}` : ''}${o.focus ? `\nThe learner has just studied: ${o.focus}\nGently create chances to use it.` : ''}
 For every learner message:
-1. Check their English. If there is a real mistake (grammar, word choice, word order or spelling), write a minimally corrected version in "fixed". Do not correct only a missing final full stop or a lowercase first letter. If there is no real mistake, "fixed" is null. If they write in Turkish, put a natural English way to say it in "fixed".
+1. Check their English. If there is a real mistake (grammar, word choice, word order or spelling), write a minimally corrected version in "fixed". ${strict() ? 'Also correct punctuation and capitalization (for example a missing full stop or question mark, a lowercase "i" or a lowercase first letter).' : 'Ignore punctuation and capitalization completely: never correct commas, full stops, question marks, apostrophes or capital letters, and keep the learner\'s own punctuation and capitals in "fixed".'} If there is no real mistake, "fixed" is null. If they write in Turkish, put a natural English way to say it in "fixed".
 2. Stay in character and continue the conversation: 1–2 short sentences of natural English at ${o.level} level, usually ending with a question.
 Reply with only this JSON:
 {"fixed": string or null, "note": "if fixed: one short Turkish sentence explaining the main correction, wrapping English words in **double asterisks**; otherwise an empty string", "reply": "your English reply", "reply_tr": "the Turkish translation of your reply"}`;
   }
-  async function chatSend(chat, text, after) {
-    meSay(`<span class="en">${esc(text)}</span>`);
+  async function chatSend(chat, text, after, again) {
+    if (!again) meSay(`<span class="en">${esc(text)}</span>`);
     setDock('<p class="dock-note">Mia yazıyor…</p>');
     showTyping();
     const owner = chat.inLesson ? L : S.chat;
     const alive = () => (chat.inLesson ? L === owner && L.chat === chat : S.chat === chat && S.tab === 'chat');
     try {
-      const r = await AI.json([{ role: 'user', content: chat.rules }, ...chat.turns.slice(-16), { role: 'user', content: text }], { tier: tier(), fresh: true });
+      // Kurallar her mesajda yeniden yazılır: noktalama ayarı sohbetin ortasında değişirse hemen geçerli olur
+      const r = await AI.json([{ role: 'user', content: chatRules(chat.o) }, ...chat.turns.slice(-16), { role: 'user', content: text }], { tier: tier(), fresh: true });
       const reply = str(r && r.reply, 800);
       if (!reply) throw { code: 'empty_completion' };
       chat.turns.push({ role: 'user', content: text }, { role: 'assistant', content: JSON.stringify(r) });
@@ -1171,7 +1308,7 @@ Reply with only this JSON:
       if (!alive()) return;
       hideTyping();
       const fixed = str(r.fixed, 800);
-      if (fixed && norm(fixed) !== norm(text)) {
+      if (fixed && differs(text, fixed)) {
         const note = str(r.note, 400);
         miaSay(`<p class="redpen en">${diffHtml(text, fixed)}</p>${note ? `<p>${fmt(note)}</p>` : ''}`, 'fix');
         const m = { q: chat.inLesson ? 'Sohbet · ' + L.lesson.t : 'Sohbet · ' + S.chat.topic.t, yours: text, right: fixed, why: note, at: today(), l: chat.inLesson ? L.lesson.id : '' };
@@ -1182,7 +1319,11 @@ Reply with only this JSON:
     } catch (e) {
       if (!alive()) return;
       hideTyping();
-      if (!(e && e.code === 'cancelled')) miaSay(`<p>${esc(errText(e && e.code))}</p>`, 'note');
+      if (!(e && e.code === 'cancelled')) {
+        // Mesajı yeniden yazmak gerekmesin: aynı mesaj tek dokunuşla tekrar gönderilir
+        const note = miaSay(`<p>${esc(errText(e && e.code))}</p><button class="btn ghost retry" type="button" data-x="again">Tekrar dene</button>`, 'note');
+        $('[data-x=again]', note).onclick = () => { note.remove(); chatSend(chat, text, after, true); };
+      }
     }
     after();
   }
@@ -1199,6 +1340,7 @@ Reply with only this JSON:
         <div class="topics">${D.topics.map(t => `<button class="topic" type="button" data-topic="${t.id}"><b>${esc(t.t)}</b><span>${esc(t.d)}</span></button>`).join('')}</div>
       </div>`;
       $$('[data-topic]', m).forEach(b => b.onclick = () => startChat(b.dataset.topic));
+      wireKey(m);
       return;
     }
     setChrome({ top: topBack(S.chat.topic.t, 'Sohbet', 'chat-exit'), nav: false, dock: true });
@@ -1214,7 +1356,7 @@ Reply with only this JSON:
     const topic = D.topics.find(t => t.id === id);
     S.chat = {
       topic, wrap: h('<div class="wrap thread-wrap"><div class="thread"></div></div>'),
-      rules: chatRules({ role: topic.role, level: chatLevel() }),
+      o: { role: topic.role, level: chatLevel() },
       turns: [{ role: 'assistant', content: JSON.stringify({ fixed: null, note: '', reply: topic.open, reply_tr: topic.open_tr }) }],
       n: 0, inLesson: false
     };
@@ -1315,7 +1457,8 @@ Reply with only this JSON:
     const ctx = (el.closest('[data-en]') && el.closest('[data-en]').dataset.en) || el.parentElement.textContent;
     const sentence = (ctx.match(/[^.!?]+[.!?]*/g) || [ctx]).find(x => x.includes(word)) || ctx;
     const token = popToken = {};
-    openPop(el, `<div class="pop-head"><b class="en">${esc(word)}</b><button class="icon-btn sm" type="button" data-x="close" aria-label="Kapat">${ICON.x}</button></div><p class="pop-tr hint">Bakıyorum…</p>`, wireClose);
+    // Yüklenirken yazı değil üç nokta gösterilir: "Bakıyorum" gibi bir yazı kelimenin anlamı sanılıyordu
+    openPop(el, `<div class="pop-head"><b class="en">${esc(word)}</b><button class="icon-btn sm" type="button" data-x="close" aria-label="Kapat">${ICON.x}</button></div><p class="pop-tr pop-load" role="status" aria-label="Anlamı yükleniyor"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span></p>`, wireClose);
     if (!AI.ready()) { $('.pop-tr', $('#pop')).textContent = errText('no_key'); return; }
     try {
       const r = await AI.json(`A Turkish learner of English tapped the word "${word}" in this English text: "${ctx.slice(0, 700)}"
@@ -1333,13 +1476,20 @@ Reply with only this JSON: {"base":"the dictionary form of the word","tr":"its T
         };
       });
     } catch (err) {
-      if (popToken !== token) return;
-      const t = $('.pop-tr', $('#pop')); if (t) t.textContent = errText(err && err.code);
+      if (popToken !== token || (err && err.code === 'cancelled')) return;
+      openPop(el, `<div class="pop-head"><b class="en">${esc(word)}</b><button class="icon-btn sm" type="button" data-x="close" aria-label="Kapat">${ICON.x}</button></div>
+        <p class="hint">${esc(errText(err && err.code))}</p><button class="btn ghost" type="button" data-x="again">Tekrar dene</button>`, pop => {
+        wireClose(pop);
+        $('[data-x=again]', pop).onclick = () => showWord(el);
+      });
     }
   }
   function wireClose(pop) { const c = $('[data-x=close]', pop); if (c) c.onclick = hidePop; }
 
   // ---------- Ayarlar ----------
+  const HOME_URL = 'https://emreyaman1.github.io/learnb/';
+  const guide = () => window.LearnbGuide || null;
+  const standalone = () => (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
   async function managePerms() {
     if (!P.perms) return toast('İzinleri sayfanın üstündeki menüden yönetebilirsin.');
     try { await P.perms.manage(); } catch (e) { toast('İzin panelini açamadım. Sayfanın üstündeki izin menüsünü kullanabilirsin.'); }
@@ -1350,41 +1500,30 @@ Reply with only this JSON: {"base":"the dictionary form of the word","tr":"its T
     el.innerHTML = `<div class="sheet-back" data-x="close"></div>
       <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="st-title">
         <div class="sheet-head"><h2 id="st-title">Ayarlar</h2><button class="icon-btn" type="button" data-x="close" aria-label="Kapat">${ICON.x}</button></div>
-        <section><h3>Mia'nın cevap hızı</h3>
-          <div class="seg"><button type="button" data-tier="quick" aria-pressed="${tier() === 'quick'}">Hızlı</button><button type="button" data-tier="careful" aria-pressed="${tier() !== 'quick'}">Dikkatli</button></div>
-          <p class="hint">Hızlı: cevapların birkaç saniyede kontrol edilir. Dikkatli: daha ayrıntılı düşünür ama her cevap 10–40 saniye sürebilir. Dersler her iki ayarda da dikkatli hazırlanır.</p></section>
+        ${P.sample ? '' : geminiSection()}
+        <section><h3>Yazım kuralları</h3>
+          <label class="switch"><input type="checkbox" data-x="strict" ${strict() ? 'checked' : ''}><span class="sw" aria-hidden="true"></span>
+            <span><b>Noktalama ve büyük harf hatalarını göster</b><small>Kapalıyken Mia nokta, virgül, soru işareti ve büyük-küçük harf için seni hatalı saymaz. Bunlardan da ders çıkarmak istersen aç.</small></span></label></section>
         <section><h3>Başlangıç seviyen</h3><p>${p ? `${p.level} · ${esc(LEVEL[p.level].name)}` : 'Henüz seçilmedi'}</p>
           <div class="dock-row"><button class="btn ghost grow" type="button" data-x="level">Seviyeyi değiştir</button><button class="btn ghost grow" type="button" data-x="placement">Seviye testini çöz</button></div></section>
-        ${P.mode === 'db' ? `<section><h3>Kayıt</h3><p class="hint">Derslerin, kelimelerin ve hataların Claude hesabına bağlı olarak saklanıyor; bu sayfayı başka bir cihazda açtığında da görürsün. Bu kayıtları sadece sen görebilirsin.</p></section>`
-          : `<section><h3>Kayıt ve yedek</h3><p class="hint">İlerlemen bu bilgisayardaki tarayıcıda saklanıyor. Tarayıcının geçmişini ve site verilerini silersen kaybolur; ara sıra yedek indir.</p>
-          <div class="dock-row"><button class="btn ghost grow" type="button" data-x="backup">Yedeği indir</button><button class="btn ghost grow" type="button" data-x="restore">Yedekten geri yükle</button></div>
-          <input type="file" id="restore-file" accept="application/json,.json" hidden><p class="hint" id="backup-msg" role="status"></p></section>`}
+        ${guide() && !standalone() ? '<section><h3>Telefonda kullan</h3><p class="hint">Learnb\'yi telefonunun ana ekranına ekleyip uygulama gibi kullanabilirsin.</p><button class="btn ghost" type="button" data-x="phone">Nasıl yapılır?</button></section>' : ''}
+        ${P.mode === 'db' ? '<section><h3>Kayıt</h3><p class="hint">Derslerin, kelimelerin ve hataların Claude hesabına bağlı olarak saklanıyor; bu sayfayı başka bir cihazda açtığında da görürsün. Bu kayıtları sadece sen görebilirsin.</p></section>'
+          : '<section><h3>Kayıt</h3><p class="hint">İlerlemen bu cihazda kendiliğinden kaydedilir ve yedeklenir; senin bir şey yapmana gerek yok. Tarayıcı ayarlarından "site verilerini sil" dersen ilerlemen de silinir.</p></section>'}
         ${P.inViewer ? `<section><h3>İzinler</h3><p class="hint">Mia'nın ders hazırlaması ve cevaplarını kontrol etmesi için bu sayfanın Claude hesabını kullanmasına izin vermen gerekiyor. Bu, Claude kullanım limitinden harcar.</p><button class="btn ghost" type="button" data-x="perms">İzinleri yönet</button></section>` : ''}
         <section><h3>Sıfırla</h3><div id="reset-area"><button class="btn ghost danger" type="button" data-x="reset">Tüm ilerlemeyi sil</button></div></section>
       </div>`;
-    if (!P.sample) $('.sheet-head', el).insertAdjacentHTML('afterend', geminiSection());
-    wireGemini(el);
-    const bk = $('[data-x=backup]', el);
-    if (bk) {
-      bk.onclick = downloadBackup;
-      const fileIn = $('#restore-file', el), msg = $('#backup-msg', el);
-      $('[data-x=restore]', el).onclick = () => fileIn.click();
-      fileIn.onchange = async () => {
-        const f = fileIn.files && fileIn.files[0];
-        if (!f) return;
-        try { await restoreBackup(f); msg.textContent = 'Yedek geri yüklendi.'; if (S.tab === 'home') renderHome(); }
-        catch (e) { msg.textContent = 'Bu dosya bir Learnb yedeği değil ya da bozuk.'; }
-      };
-    }
+    wireKey(el);
     $$('[data-x=close]', el).forEach(b => b.onclick = closeSheet);
-    $$('[data-tier]', el).forEach(b => b.onclick = () => {
-      if (!S.profile) return toast('Önce bir seviye seç.');
-      S.profile.tier = b.dataset.tier; Store.save('profile', S.profile);
-      $$('[data-tier]', el).forEach(x => x.setAttribute('aria-pressed', String(x === b)));
-    });
+    $('[data-x=strict]', el).onchange = e => {
+      lsSet('learnb.strict', e.target.checked ? '1' : null);
+      toast(e.target.checked ? 'Mia artık noktalama ve büyük harfi de düzeltecek.' : 'Mia noktalama ve büyük harfe takılmayacak.');
+    };
+    const ph = $('[data-x=phone]', el); if (ph) ph.onclick = () => { closeSheet(); guide().phoneTip({ url: HOME_URL }); };
     $('[data-x=level]', el).onclick = () => { closeSheet(); L = null; renderOnboarding(!!S.profile); };
     $('[data-x=placement]', el).onclick = () => { closeSheet(); L = null; renderPlacement(); };
     const pb = $('[data-x=perms]', el); if (pb) pb.onclick = managePerms;
+    const del = $('[data-x=gk-del]', el);
+    if (del) del.onclick = () => { ['learnb.gkey', 'learnb.gfast', 'learnb.gsmart', 'learnb.gmodels', 'learnb.gmodelsAt'].forEach(k => lsSet(k, null)); loadKeys(); closeSheet(); refreshAfterAi(); };
     $('[data-x=reset]', el).onclick = () => {
       const area = $('#reset-area', el);
       area.innerHTML = '<p class="hint">Bitirdiğin dersler, serin, kelimelerin ve hataların silinir. Hazırlanmış ders içerikleri kalır. Bu geri alınamaz.</p><div class="dock-row"><button class="btn ghost" type="button" data-x="no">Vazgeç</button><button class="btn primary grow" type="button" data-x="yes">Evet, hepsini sil</button></div>';
@@ -1401,80 +1540,69 @@ Reply with only this JSON: {"base":"the dictionary form of the word","tr":"its T
   }
   function closeSheet() { const el = $('#sheet'); el.hidden = true; el.innerHTML = ''; }
 
-  // Google Gemini anahtarı: kullanıcı kendisi alır ve yapıştırır; anahtar sadece bu tarayıcıda durur
-  function geminiSection() {
-    const opts = (G.models.length ? rankModels(G.models) : [G.model]).filter(Boolean);
-    return `<section id="ai-sec"><h3>Mia'nın yapay zekâsı: Google Gemini</h3>
-      <p class="status ${G.key ? 'on' : ''}">${G.key ? `Bağlı${G.model ? ` · model: ${esc(G.model)}` : ''}` : 'Henüz bağlı değil'}</p>
-      ${G.key ? '' : `<ol class="steps">
-        <li><a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> adresini aç ve Google hesabınla gir.</li>
-        <li>"Create API key" (API anahtarı oluştur) düğmesine bas.</li>
-        <li>Çıkan uzun kodu kopyala, aşağıya yapıştır ve "Kaydet ve dene"ye bas.</li></ol>`}
-      <form class="compose" id="gk-form" autocomplete="off">
-        <input class="field" id="gk" type="password" placeholder="${G.key ? 'Yeni anahtar (değiştirmek için)' : 'Google Gemini anahtarını yapıştır'}" aria-label="Google Gemini anahtarı" spellcheck="false">
-        <button class="btn primary" id="gk-btn">Kaydet ve dene</button>
-      </form>
-      <p class="hint" id="gk-msg" role="status"></p>
-      ${G.key && opts.length > 1 ? `<label class="hint" for="gm">Model</label><select class="field" id="gm">${opts.map(m => `<option value="${esc(m)}" ${m === G.model ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select>` : ''}
-      <p class="hint">Anahtar sadece bu bilgisayardaki tarayıcıda saklanır. Google'ın ücretsiz kullanımında günlük bir istek sınırı vardır ve yazdıkların Google'ın ürünlerini geliştirmek için kullanılabilir; derslere kişisel bilgi yazma.</p>
-      ${G.key ? '<button class="btn ghost danger" type="button" data-x="gk-del">Anahtarı sil</button>' : ''}
-    </section>`;
+  // Google anahtarı: kullanıcı Google'dan alır ve yapıştırır; anahtar sadece bu cihazdaki tarayıcıda durur
+  const keyForm = ph => `<form class="key-form" data-key autocomplete="off">
+      <input class="field" type="text" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="${esc(ph)}" aria-label="Google anahtarı">
+      <div class="dock-row"><button class="btn ghost" type="button" data-x="paste">Yapıştır</button><button class="btn primary grow" type="submit">Kaydet</button></div>
+      <p class="hint" data-msg role="status"></p></form>`;
+  function setupBody() {
+    return `<p>Mia'nın seninle çalışabilmesi için Google'dan ücretsiz bir <b>anahtar</b> alman gerekiyor. Anahtar, Mia'yı kendi Google hesabınla çalıştıran uzun bir koddur. Bir kere girmen yeterli.</p>
+      <div class="kd-slot"></div>
+      <p class="setup-step">1. Anahtarını Google'dan al</p>
+      <a class="btn primary wide" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google'ın anahtar sayfasını aç</a>
+      <p class="hint">Sayfa yeni sekmede açılır. Kodu kopyalayınca bu sekmeye geri dön.</p>
+      <p class="setup-step">2. Kodu buraya yapıştır</p>
+      ${keyForm('AIza ile başlayan kodu yapıştır')}`;
   }
-  function wireGemini(el) {
-    const form = $('#gk-form', el);
-    if (!form) return;
-    const inp = $('#gk', el), btn = $('#gk-btn', el), msg = $('#gk-msg', el);
-    form.onsubmit = async e => {
-      e.preventDefault();
-      const key = inp.value.trim();
-      if (!key) return inp.focus();
-      btn.disabled = true;
-      msg.textContent = 'Anahtar deneniyor…';
-      try {
-        await setupGemini(key);
-        inp.value = '';
-        toast('Mia hazır!');
-        refreshAfterAi();
-      } catch (err) {
-        msg.textContent = errText(err && err.code);
-        btn.disabled = false;
-      }
-    };
-    const sel = $('#gm', el);
-    if (sel) sel.onchange = () => { G.model = sel.value; lsSet('learnb.gmodel', G.model); toast('Model değişti.'); };
-    const del = $('[data-x=gk-del]', el);
-    if (del) del.onclick = () => { G.key = ''; G.model = ''; G.models = []; lsSet('learnb.gkey', null); lsSet('learnb.gmodel', null); refreshAfterAi(); };
-    if (G.key && !G.models.length) listModels().then(() => { const s2 = $('#ai-sec'); if (s2 && !$('#gm')) { s2.outerHTML = geminiSection(); wireGemini($('#sheet')); } }).catch(() => {});
+  function geminiSection() {
+    if (!G.key) return `<section id="ai-sec"><h3>Mia'yı çalıştır</h3>${setupBody()}</section>`;
+    return `<section id="ai-sec"><h3>Mia'nın bağlantısı</h3>
+      <p class="status on">Bağlı, Mia hazır</p>
+      <details class="key-more"><summary>Anahtarı değiştir</summary>${keyForm('Yeni anahtarı yapıştır')}</details>
+      <p class="hint">Anahtar sadece bu cihazdaki tarayıcıda saklanır. Google'ın ücretsiz kullanımında günlük bir sınır vardır ve yazdıkların Google'ın ürünlerini geliştirmek için kullanılabilir; derslere kişisel bilgi yazma.</p>
+      <button class="btn ghost danger" type="button" data-x="gk-del">Anahtarı sil</button></section>`;
+  }
+  // Kurulum kartını ve ayarlardaki anahtar kutusunu çalıştırır; dönen rehber animasyonunu yerine koyar
+  function wireKey(root) {
+    const slot = $('.kd-slot', root), g = guide();
+    if (slot && !slot.firstChild && g) { try { slot.appendChild(g.keyDemo()); } catch (e) { /* rehber olmadan da çalışır */ } }
+    $$('[data-key]', root).forEach(form => {
+      const inp = $('input', form), msg = $('[data-msg]', form), btns = $$('button', form);
+      let busy = false;
+      const submit = async () => {
+        const key = cleanKey(inp.value);
+        if (!key) { msg.textContent = 'Önce Google\'dan aldığın kodu kutuya yapıştır.'; return inp.focus(); }
+        if (busy) return;
+        busy = true;
+        btns.forEach(b => { b.disabled = true; });
+        msg.textContent = 'Kontrol ediyorum…';
+        try {
+          await setupGemini(key);
+          inp.value = '';
+          closeSheet();
+          refreshAfterAi();
+          toast('Mia hazır! Derse başlayabilirsin.');
+        } catch (err) {
+          msg.textContent = errText(err && err.code);
+          btns.forEach(b => { b.disabled = false; });
+        }
+        busy = false;
+      };
+      form.onsubmit = e => { e.preventDefault(); submit(); };
+      // Doğru biçimde bir kod yapıştırılınca ayrıca düğmeye basmak gerekmez
+      inp.addEventListener('input', () => { if (KEY_RE.test(cleanKey(inp.value))) submit(); });
+      $('[data-x=paste]', form).onclick = async () => {
+        try {
+          const t = cleanKey(await navigator.clipboard.readText());
+          if (!t) throw new Error('boş');
+          inp.value = t;
+          submit();
+        } catch (e) { inp.focus(); msg.textContent = 'Kutuya uzun bas (bilgisayarda sağ tıkla) ve "Yapıştır"ı seç.'; }
+      };
+    });
   }
   function refreshAfterAi() {
-    const sec = $('#ai-sec');
-    if (sec) { sec.outerHTML = geminiSection(); wireGemini($('#sheet')); }
     if (S.tab === 'home') renderHome(); else if (S.tab === 'chat' && !S.chat) renderChat();
-  }
-
-  // Yedek: bu tarayıcıdaki Learnb kayıtlarını (anahtar hariç) dosyaya indirir ya da geri yükler
-  function downloadBackup() {
-    const data = {};
-    try {
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        if (k && k.startsWith('learnb.') && k !== 'learnb.gkey') data[k] = localStorage.getItem(k);
-      }
-    } catch (e) { return toast('Tarayıcı kaydına ulaşılamadı.'); }
-    const blob = new Blob([JSON.stringify({ app: 'learnb', v: 1, at: new Date().toISOString(), data })], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `learnb-yedek-${today()}.json`;
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
-  }
-  async function restoreBackup(file) {
-    const j = JSON.parse(await file.text());
-    if (!j || j.app !== 'learnb' || !j.data || typeof j.data !== 'object') throw new Error('not a backup');
-    Object.entries(j.data).forEach(([k, v]) => { if (k.startsWith('learnb.') && k !== 'learnb.gkey' && typeof v === 'string') lsSet(k, v); });
-    S.docs = {};
-    await loadState();
   }
 
   let toastTimer = null;
@@ -1532,15 +1660,33 @@ Reply with only this JSON: {"base":"the dictionary form of the word","tr":"its T
     S.vocab = vocab && vocab.words && typeof vocab.words === 'object' ? vocab : { words: {} };
     S.mistakes = mistakes && Array.isArray(mistakes.items) ? mistakes : { items: [] };
   }
+  // Learnb yalnızca kendi bağlantısından çalışır: indirilen ya da başka bir adreste yayınlanan kopya açılmaz.
+  // (localhost geliştirme sırasında denemek için açık kalır.)
+  function allowedHost() {
+    if (window.claude) return true;
+    const hn = location.hostname;
+    return hn === 'emreyaman1.github.io' || hn === 'localhost' || hn === '127.0.0.1' || /(^|\.)claude(usercontent)?\.(ai|com)$/.test(hn);
+  }
+  function renderBlocked() {
+    setChrome({ top: '<div class="wrap top-row"><div class="brand">Learn<span class="b">b</span></div></div>', nav: false });
+    const m = main(); m.className = 'main';
+    m.innerHTML = `<div class="wrap onboard"><h1 class="blocked-title">Learnb'yi kendi bağlantısından aç</h1>
+      <p class="lead">Learnb yalnızca internetteki adresinden çalışır; indirilen kopyalar açılmaz.</p>
+      <a class="btn primary" href="${HOME_URL}">Learnb'yi aç</a></div>`;
+  }
   async function boot() {
+    if (!allowedHost()) return renderBlocked();
     // İnternetten açıldığında (telefon) dosyaları sakla ve kayıtların silinmemesini iste
     if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
     renderHome();
+    // Tarayıcı kaydından bir şey silindiyse yedekten geri getir (anahtar dahil)
+    if (await Backup.restore()) loadKeys();
     await connect();
     await loadState();
     S.loading = false;
     if (S.tab === 'home') renderHome();
+    refreshModels();
   }
   boot();
 })();
