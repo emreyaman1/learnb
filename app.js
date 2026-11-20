@@ -708,6 +708,7 @@
     const answer = ok => {
       const q = qs[i];
       seen.add(q.level);
+      sfx('place', i % 8); // doğru ya da yanlış fark etmez: test cevabı ele vermesin, sadece ilerlediğini hissettirsin
       if (ok) score[q.level]++;
       i++;
       // Blok bittiyse: geçemediyse test burada biter
@@ -950,6 +951,7 @@ Rules:
     S.tab = 'lesson';
     const R = L = newRun(lesson);
     if (window.Sfx) window.Sfx.reset();
+    sfx('start');
     setChrome({
       top: `<div class="wrap top-row">
         <button class="icon-btn" type="button" data-act="home" aria-label="Derslere dön">${ICON.back}</button>
@@ -1099,9 +1101,10 @@ Rules:
         <div class="dock-row"><button class="btn ghost" type="button" data-x="clear" ${built.length ? '' : 'disabled'}>Temizle</button><button class="btn primary grow" type="button" data-x="check" ${bank.length ? 'disabled' : ''}>Kontrol et</button></div>${askLink()}`;
       const rerender = () => renderDock();
       setDock(draw, d => {
-        $$('[data-n]', d).forEach(b => b.onclick = () => { built.push(bank.splice(+b.dataset.n, 1)[0]); rerender(); });
-        $$('[data-b]', d).forEach(b => b.onclick = () => { bank.push(built.splice(+b.dataset.b, 1)[0]); rerender(); });
-        $('[data-x=clear]', d).onclick = () => { bank = bank.concat(built); built = []; rerender(); };
+        // Her kelime melodinin bir notası: koydukça yükselir, son kelimede küçük bir "oldu" akoru çalar
+        $$('[data-n]', d).forEach(b => b.onclick = () => { built.push(bank.splice(+b.dataset.n, 1)[0]); sfx(bank.length ? 'place' : 'ready', built.length - 1); rerender(); });
+        $$('[data-b]', d).forEach(b => b.onclick = () => { bank.push(built.splice(+b.dataset.b, 1)[0]); sfx('unplace'); rerender(); });
+        $('[data-x=clear]', d).onclick = () => { bank = bank.concat(built); built = []; sfx('sweep'); rerender(); };
         $('[data-x=check]', d).onclick = () => {
           const sent = capFirst(built.map(c => c.w).join(' '));
           meSay(`<span class="en">${esc(sent)}</span>`);
@@ -1375,6 +1378,7 @@ Answer in simple, friendly Turkish in at most 120 words. Give a short ${T.name} 
   }
   function completeLesson() {
     const R = L, id = R.lesson.id;
+    sfx('coin');
     if (!S.profile) S.profile = newProfile(R.lesson.level);
     const p = S.profile, prev = p.done[id];
     p.done[id] = { stars: Math.max(R.stars, (prev && prev.stars) || 0), at: today() };
@@ -1421,7 +1425,7 @@ Reply with only this JSON:
 {"fixed": string or null, "note": "if fixed: one short Turkish sentence explaining the main correction, wrapping ${N} words in **double asterisks**; otherwise an empty string", "reply": "your ${N} reply", "reply_tr": "the Turkish translation of your reply"}`;
   }
   async function chatSend(chat, text, after, again) {
-    if (!again) meSay(`<span class="en">${esc(text)}</span>`);
+    if (!again) { meSay(`<span class="en">${esc(text)}</span>`); sfx('send'); }
     setDock('<p class="dock-note">Mia yazıyor…</p>');
     showTyping();
     const owner = chat.inLesson ? L : S.chat;
@@ -1442,6 +1446,7 @@ Reply with only this JSON:
         const m = { q: chat.inLesson ? 'Sohbet · ' + L.lesson.t : 'Sohbet · ' + S.chat.topic.t, yours: text, right: fixed, why: note, at: today(), l: chat.inLesson ? L.lesson.id : '' };
         if (chat.inLesson) L.newMistakes.push(m); else addMistakes([m]);
       }
+      sfx('recv');
       miaLine(reply, str(r.reply_tr, 800));
       if (chat.inLesson && chat.n === 4) miaSay('<p>Çok iyi gidiyorsun! İstersen devam et, istersen sohbeti bitirip dersi tamamla.</p>', 'note');
     } catch (e) {
@@ -1549,9 +1554,9 @@ Reply with only this JSON:
         html: shown ? '<div class="dock-row"><button class="btn ghost grow" type="button" data-x="no">Bilmiyordum</button><button class="btn primary grow" type="button" data-x="yes">Biliyordum</button></div>'
           : '<div class="dock-row"><button class="btn primary grow" type="button" data-x="show">Anlamını göster</button></div>',
         wire: d => {
-          const s = $('[data-x=show]', d); if (s) s.onclick = () => { shown = true; draw(); };
+          const s = $('[data-x=show]', d); if (s) s.onclick = () => { shown = true; sfx('flip'); draw(); };
           const y = $('[data-x=yes]', d); if (y) y.onclick = () => { w.box = Math.min(5, (w.box || 0) + 1); w.due = addDays(today(), INTERVAL[w.box]); known++; sfx('pair', Math.min(known - 1, 7)); step(); };
-          const n = $('[data-x=no]', d); if (n) n.onclick = () => { w.box = 0; w.due = today(); if (!again.has(w.en)) { again.add(w.en); q.push(w); } step(); };
+          const n = $('[data-x=no]', d); if (n) n.onclick = () => { sfx('soft'); w.box = 0; w.due = today(); if (!again.has(w.en)) { again.add(w.en); q.push(w); } step(); };
         }
       });
     };
@@ -1598,7 +1603,7 @@ Reply with only this JSON: {"base":"${T.base}","tr":"its Turkish meaning in this
         <button class="btn ghost" type="button" data-x="add" ${has ? 'disabled' : ''}>${has ? 'Defterinde var' : 'Defterime ekle'}</button>`, pop => {
         wireClose(pop);
         $('[data-x=add]', pop).onclick = e => {
-          if (addWord({ en: base, tr, ex: sentence.trim() }, L ? L.lesson.id : '')) { Store.save('vocab', S.vocab); toast('Defterine eklendi.'); }
+          if (addWord({ en: base, tr, ex: sentence.trim() }, L ? L.lesson.id : '')) { Store.save('vocab', S.vocab); sfx('plop'); toast('Defterine eklendi.'); }
           e.currentTarget.disabled = true; e.currentTarget.textContent = 'Defterinde var';
         };
       });
@@ -1652,8 +1657,8 @@ Reply with only this JSON: {"base":"${T.base}","tr":"its Turkish meaning in this
     };
     $('[data-x=sound]', el).onchange = e => {
       lsSet('learnb.sound', e.target.checked ? null : '0');
-      if (e.target.checked) sfx('preview');
-      else toast('Ses efektleri kapatıldı.');
+      // Açılınca duyulan küçük "açıldı" sesi sfx.js'teki genel anahtar sesidir
+      if (!e.target.checked) toast('Ses efektleri kapatıldı.');
     };
     const ph = $('[data-x=phone]', el); if (ph) ph.onclick = () => { closeSheet(); guide().phoneTip({ url: HOME_URL }); };
     $('[data-x=level]', el).onclick = () => { closeSheet(); L = null; renderOnboarding(!!S.profile); };

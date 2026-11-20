@@ -1,6 +1,6 @@
 /* Learnb: uygulama dosyalarını telefonda saklar; internet varken her zaman en yeni sürümü alır,
    yokken saklanan sürümle açılır. Google'a giden istekler saklanmaz. */
-const CACHE = 'learnb-v4';
+const CACHE = 'learnb-v5';
 const SHELL = ['./', './index.html', './app.js', './sfx.js', './curriculum.js', './curriculum-de.js', './guide.js', './guide.css', './icons/qr.svg', './manifest.webmanifest', './icons/icon-192.png', './icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
