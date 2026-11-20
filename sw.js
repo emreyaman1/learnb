@@ -1,6 +1,6 @@
 /* Learnb: uygulama dosyalarını telefonda saklar; internet varken her zaman en yeni sürümü alır,
    yokken saklanan sürümle açılır. Google'a giden istekler saklanmaz. */
-const CACHE = 'learnb-v6';
+const CACHE = 'learnb-v7';
 const SHELL = ['./', './index.html', './app.js', './sfx.js', './curriculum.js', './curriculum-de.js', './guide.js', './guide.css', './icons/qr.svg', './manifest.webmanifest', './icons/icon-192.png', './icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
@@ -13,7 +13,7 @@ self.addEventListener('fetch', e => {
   const req = e.request;
   if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) return;
   e.respondWith(
-    fetch(req)
+    fetch(req, { cache: 'no-cache' })
       .then(res => {
         if (res.ok) { const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)); }
         return res;
