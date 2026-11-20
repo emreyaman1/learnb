@@ -55,6 +55,8 @@
   const pick = a => a[Math.floor(Math.random() * a.length)];
   const fine = () => window.matchMedia && matchMedia('(pointer: fine)').matches;
   const reduced = () => window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // Ses efektleri sfx.js'te; o dosya yüklenemese bile uygulama sessizce çalışmaya devam eder
+  const sfx = (name, arg) => { try { if (window.Sfx) window.Sfx.play(name, arg); } catch (e) { /* yok say */ } };
   function shuffle(a) { const b = a.slice(); for (let i = b.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [b[i], b[j]] = [b[j], b[i]]; } return b; }
   // **kelime** → vurgulu; satır sonları korunur
   const fmt = s => esc(s).replace(/\*\*(.+?)\*\*/g, '<mark>$1</mark>').replace(/\n/g, '<br>');
@@ -729,7 +731,8 @@
       $('[data-skip]', m).onclick = () => answer(false);
     };
     const result = () => {
-      const total = Object.values(score).reduce((a, b) => a + b, 0), asked = qs.filter(q => seen.has(q.level)).length;
+      sfx('fanfare', 2);
+      const total =Object.values(score).reduce((a, b) => a + b, 0), asked = qs.filter(q => seen.has(q.level)).length;
       const top = level === tested[tested.length - 1] && score[level] >= passMark(count(level));
       m.innerHTML = `<div class="wrap placement">
         <h2>Önerim: ${level} · ${esc(LEVEL[level].name)}</h2>
@@ -762,6 +765,7 @@
   }
   function feedback(kind, body, title) {
     const icon = kind === 'ok' ? ICON.check : ICON.x;
+    sfx(kind === 'ok' ? 'ok' : kind === 'almost' ? 'almost' : 'bad');
     return miaSay(`<p class="verdict">${icon}<b>${esc(title || (kind === 'ok' ? pick(PRAISE) : 'Tam olmadı'))}</b></p>${body}`, kind);
   }
 
@@ -945,6 +949,7 @@ Rules:
     if (!lesson) return;
     S.tab = 'lesson';
     const R = L = newRun(lesson);
+    if (window.Sfx) window.Sfx.reset();
     setChrome({
       top: `<div class="wrap top-row">
         <button class="icon-btn" type="button" data-act="home" aria-label="Derslere dön">${ICON.back}</button>
@@ -1122,6 +1127,7 @@ Rules:
         const a = sel; sel = null;
         if (a.dataset.k === b.dataset.k) {
           [a, b].forEach(x => { x.classList.remove('sel'); x.classList.add('done'); x.disabled = true; done.add(x.dataset.k + x.dataset.side); });
+          if (done.size < s.pairs.length * 2) sfx('pair', done.size / 2 - 1);
           if (done.size === s.pairs.length * 2) {
             record(errors === 0, null);
             feedback('ok', `<p>${errors ? `Hepsini eşleştirdin. ${errors} kez yanlış eşleştirme yaptın, sorun değil.` : 'Hepsini ilk denemede eşleştirdin.'}</p>`, errors ? 'Tamamladın!' : 'Mükemmel!');
@@ -1129,6 +1135,7 @@ Rules:
           }
         } else {
           errors++;
+          sfx('miss');
           [a, b].forEach(x => x.classList.add('wrong'));
           setTimeout(() => [a, b].forEach(x => x.classList.remove('wrong', 'sel')), 600);
         }
@@ -1359,6 +1366,7 @@ Answer in simple, friendly Turkish in at most 120 words. Give a short ${T.name} 
     progress();
     const pct = R.graded ? R.correct / R.graded : 1;
     R.stars = pct >= 0.9 ? 3 : pct >= 0.65 ? 2 : 1;
+    sfx('fanfare', R.stars);
     const words = (R.vocab && R.vocab.words) || [];
     if (words.length) miaCard(`<article class="card words"><p class="tag">Yeni kelimeler</p><h3>Bu dersin kelimeleri</h3><ul class="vlist">${words.map(w => `<li data-en="${esc(w.ex || w.en)}"><b class="en">${esc(w.en)}</b><span>${esc(w.tr)}</span>${w.ex ? `<i class="en">${wordify(w.ex)}</i>` : ''}</li>`).join('')}</ul><p class="hint">Dersi bitirince bu kelimeler defterine eklenir.</p></article>`);
     const pts = (R.summary && R.summary.points) || [];
@@ -1530,6 +1538,7 @@ Reply with only this JSON:
     const draw = () => {
       if (i >= q.length) {
         save();
+        sfx('fanfare', known >= q.length * 0.8 ? 3 : 2);
         m.innerHTML = `<div class="wrap review"><div class="flash"><div class="front">Tekrar bitti!</div><p class="ex">${known} kelimeyi bildin. Bilmediklerin yakında yeniden karşına çıkacak.</p></div></div>`;
         renderDock({ html: '<div class="dock-row"><button class="btn primary grow" type="button" data-act="notes">Defterime dön</button></div>' });
         return;
@@ -1541,7 +1550,7 @@ Reply with only this JSON:
           : '<div class="dock-row"><button class="btn primary grow" type="button" data-x="show">Anlamını göster</button></div>',
         wire: d => {
           const s = $('[data-x=show]', d); if (s) s.onclick = () => { shown = true; draw(); };
-          const y = $('[data-x=yes]', d); if (y) y.onclick = () => { w.box = Math.min(5, (w.box || 0) + 1); w.due = addDays(today(), INTERVAL[w.box]); known++; step(); };
+          const y = $('[data-x=yes]', d); if (y) y.onclick = () => { w.box = Math.min(5, (w.box || 0) + 1); w.due = addDays(today(), INTERVAL[w.box]); known++; sfx('pair', Math.min(known - 1, 7)); step(); };
           const n = $('[data-x=no]', d); if (n) n.onclick = () => { w.box = 0; w.due = today(); if (!again.has(w.en)) { again.add(w.en); q.push(w); } step(); };
         }
       });
@@ -1622,6 +1631,9 @@ Reply with only this JSON: {"base":"${T.base}","tr":"its Turkish meaning in this
           <div class="seg" role="group" aria-label="Öğrendiğin dil">${langList().map(x => `<button type="button" data-lang="${x.code}" aria-pressed="${x.code === LANG}">${esc(x.tr)}</button>`).join('')}</div>
           <p class="hint">Her dilin dersleri, seviyesi, kelimeleri ve hataları ayrı tutulur. Dil değiştirince öbüründeki ilerlemen kaybolmaz.</p></section>` : ''}
         ${P.sample ? '' : aiSection()}
+        <section><h3>Ses</h3>
+          <label class="switch"><input type="checkbox" data-x="sound" ${lsGet('learnb.sound') === '0' ? '' : 'checked'}><span class="sw" aria-hidden="true"></span>
+            <span><b>Ses efektleri</b><small>Doğru cevapta tatlı bir çan, yanlışta yumuşak bir uyarı, ders bitince küçük bir kutlama sesi çalar. Telefonun sessiz modundaysa ses gelmez.</small></span></label></section>
         <section><h3>Yazım kuralları</h3>
           <label class="switch"><input type="checkbox" data-x="strict" ${strict() ? 'checked' : ''}><span class="sw" aria-hidden="true"></span>
             <span><b>Noktalama ve büyük harf hatalarını göster</b><small>Kapalıyken Mia nokta, virgül, soru işareti ve büyük-küçük harf için seni hatalı saymaz. Bunlardan da ders çıkarmak istersen aç.</small></span></label></section>
@@ -1637,6 +1649,11 @@ Reply with only this JSON: {"base":"${T.base}","tr":"its Turkish meaning in this
     $('[data-x=strict]', el).onchange = e => {
       lsSet('learnb.strict', e.target.checked ? '1' : null);
       toast(e.target.checked ? 'Mia artık noktalama ve büyük harfi de düzeltecek.' : 'Mia noktalama ve büyük harfe takılmayacak.');
+    };
+    $('[data-x=sound]', el).onchange = e => {
+      lsSet('learnb.sound', e.target.checked ? null : '0');
+      if (e.target.checked) sfx('preview');
+      else toast('Ses efektleri kapatıldı.');
     };
     const ph = $('[data-x=phone]', el); if (ph) ph.onclick = () => { closeSheet(); guide().phoneTip({ url: HOME_URL }); };
     $('[data-x=level]', el).onclick = () => { closeSheet(); L = null; renderOnboarding(!!S.profile); };
