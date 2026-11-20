@@ -1,13 +1,15 @@
-# Learnb İngilizce
+# Learnb: İngilizce ve Almanca
 
-Türkçe konuşanlar için yazıyla çalışan, kişisel bir İngilizce ders uygulaması. Mia adlı öğretmen her derste yeni bir konu anlatır, alıştırmaları kontrol eder ve yazışarak pratik yaptırır.
+Türkçe konuşanlar için yazıyla çalışan, kişisel bir İngilizce ve Almanca ders uygulaması. Mia adlı öğretmen her derste yeni bir konu anlatır, alıştırmaları kontrol eder ve yazışarak pratik yaptırır.
 
 **[Uygulamayı aç → emreyaman1.github.io/learnb](https://emreyaman1.github.io/learnb/)**
 
-- A1'den C2'ye 120 ders, C2'ye kadar ölçen seviye testi
+- İki dil: İngilizce ve Almanca. Her dilin kendi dersleri, seviyesi, kelime defteri ve hata listesi var; üst şeritteki dil düğmesinden geçilir
+- Her dilde A1'den C2'ye 120 ders, C2'ye kadar ölçen seviye testi
 - Seçmeli, boşluk doldurma, cümle kurma, eşleştirme, okuma, çeviri ve kendi cümleni yazma alıştırmaları
 - Hataların kırmızı kalemle düzeltilir; kelimeler ve hatalar defterde birikir
 - Konulara göre serbest sohbet
+- Almancada ä, ö, ü, ß yerine ae, oe, ue, ss yazmak hata sayılmaz (Türkçe klavyede bu harfler yok)
 
 ## Kullanım
 

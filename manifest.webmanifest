@@ -1,7 +1,7 @@
 {
-  "name": "Learnb İngilizce",
+  "name": "Learnb: İngilizce ve Almanca",
   "short_name": "Learnb",
-  "description": "Mia ile yazışarak, her gün kısa derslerle İngilizce.",
+  "description": "Mia ile yazışarak, her gün kısa derslerle İngilizce ve Almanca.",
   "lang": "tr",
   "start_url": "./",
   "scope": "./",
