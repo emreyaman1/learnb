@@ -1096,7 +1096,7 @@ Rules:
       let bank = shuffle(start), built = [];
       for (let tries = 0; tries < 6 && bank.every((c, n) => c.k === n) && bank.length > 1; tries++) bank = shuffle(start);
       miaSay(`<p class="tag">Cümle kurma</p><p>${fmt(s.q)}</p>${s.tr ? `<p class="hint">Anlamı: ${esc(s.tr)}</p>` : ''}`);
-      const draw = () => `<div class="built" aria-live="polite">${built.length ? built.map((c, n) => `<button class="chip-w on" type="button" data-b="${n}">${esc(c.w)}</button>`).join('') : '<span class="ph">Kelimelere sırayla dokun</span>'}</div>
+      const draw = () => `<div class="built" aria-live="polite">${built.length ? built.map((c, n) => `<button class="chip-w on" type="button" data-b="${n}">${esc(c.w)}</button>`).join('') : '<span class="built-ph">Kelimelere sırayla dokun</span>'}</div>
         <div class="bank">${bank.map((c, n) => `<button class="chip-w" type="button" data-n="${n}">${esc(c.w)}</button>`).join('')}</div>
         <div class="dock-row"><button class="btn ghost" type="button" data-x="clear" ${built.length ? '' : 'disabled'}>Temizle</button><button class="btn primary grow" type="button" data-x="check" ${bank.length ? 'disabled' : ''}>Kontrol et</button></div>${askLink()}`;
       const rerender = () => renderDock();
